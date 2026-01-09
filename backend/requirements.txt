@@ -1,0 +1,31 @@
+# Core dependencies
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.5
+pydantic-settings==2.7.1
+
+# Trading & Market Data
+robin-stocks==3.4.0
+yfinance==1.0
+
+# Technical Analysis
+pandas==2.2.3
+pandas-market-calendars==5.2.3
+ta==0.11.0
+
+# AI/ML
+boto3==1.35.97
+
+# Caching & Database
+redis==5.2.1
+aiosqlite==0.20.0
+
+# Async support
+aiohttp==3.11.11
+asyncio==3.4.3
+
+# CORS
+python-multipart==0.0.20
+
+# Configuration
+pyyaml==6.0.2
