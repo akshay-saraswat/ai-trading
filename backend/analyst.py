@@ -221,10 +221,6 @@ Output Format (JSON object with ticker symbols as keys):
     "reasoning": "brief explanation of trade thesis",
     "target_premium_pct": 0.90-1.00,
     "strategy_used": "strategy name",
-    "entry_timing": {{
-      "timing": "IMMEDIATE|WAIT_FOR_DIP|WAIT_FOR_PULLBACK",
-      "rationale": "when to enter and why"
-    }},
     "exit_targets": {{
       "take_profit_pct": 0.20-0.50,
       "stop_loss_pct": 0.15-0.40,
@@ -234,7 +230,7 @@ Output Format (JSON object with ticker symbols as keys):
 }}
 
 Example response (COPY THIS FORMAT EXACTLY):
-{{"AAPL": {{"decision": "BUY_CALL", "confidence": 0.75, "reasoning": "Oversold RSI (32), price bounced off SMA50 support, bullish MACD crossover", "target_premium_pct": 0.95, "strategy_used": "mean_reversion", "entry_timing": {{"timing": "IMMEDIATE", "rationale": "Already at strong support, momentum turning bullish"}}, "exit_targets": {{"take_profit_pct": 0.40, "stop_loss_pct": 0.25, "rationale": "Target +40% at RSI 60-65 resistance, stop at -25% if breaks SMA50 support"}}}}, "TSLA": {{"decision": "NOTHING", "confidence": 0.3, "reasoning": "Mixed signals, no clear trend", "target_premium_pct": 0.95, "strategy_used": "none"}}}}
+{{"AAPL": {{"decision": "BUY_CALL", "confidence": 0.75, "reasoning": "Oversold RSI (32), price bounced off SMA50 support, bullish MACD crossover", "target_premium_pct": 0.95, "strategy_used": "mean_reversion", "exit_targets": {{"take_profit_pct": 0.40, "stop_loss_pct": 0.25, "rationale": "Target +40% at RSI 60-65 resistance, stop at -25% if breaks SMA50 support"}}}}, "TSLA": {{"decision": "NOTHING", "confidence": 0.3, "reasoning": "Mixed signals, no clear trend", "target_premium_pct": 0.95, "strategy_used": "none"}}}}
 
 START YOUR RESPONSE WITH {{ AND END WITH }} - NOTHING ELSE:
 """

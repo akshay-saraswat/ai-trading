@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Trading Configuration
     # NOTE: DEFAULT_TAKE_PROFIT, DEFAULT_STOP_LOSS, and MAX_POSITION_SIZE
     # are now configured via the Settings page in the web interface
-    DEFAULT_TAKE_PROFIT: float = 0.20  # 20% (default only, overridden by settings page)
+    DEFAULT_TAKE_PROFIT: float = 0.10  # 10% (default only, overridden by settings page)
     DEFAULT_STOP_LOSS: float = 0.20  # 20% (default only, overridden by settings page)
     MAX_POSITION_SIZE: float = 1000.0  # (default only, overridden by settings page)
     RISK_PER_TRADE: float = 0.02  # 2% of account

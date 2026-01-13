@@ -281,7 +281,9 @@ function InsightsTab() {
             contracts: numContracts,
             strike: tradingStock.option.strike,
             expiration: tradingStock.option.expiration,
-            limit_price: tradingStock.option.limit_price
+            limit_price: tradingStock.option.limit_price,
+            strategy_used: tradingStock.strategy_used || 'none',
+            exit_targets: tradingStock.exit_targets
           })
         });
 
@@ -310,6 +312,21 @@ function InsightsTab() {
 
   const formatDecision = (decision) => {
     return decision.replace('_', ' ');
+  };
+
+  const formatStrategy = (strategy) => {
+    const strategyMap = {
+      'mean_reversion': 'Mean Reversion',
+      'momentum': 'Momentum',
+      'trend_following': 'Trend Following',
+      'covered_call': 'Covered Call',
+      'cash_secured_put': 'Cash-Secured Put',
+      'bull_call_spread': 'Bull Call Spread',
+      'bear_put_spread': 'Bear Put Spread',
+      'straddle': 'Straddle',
+      'none': 'None'
+    };
+    return strategyMap[strategy] || strategy;
   };
 
   const getConfidenceColor = (confidence) => {
@@ -401,8 +418,13 @@ function InsightsTab() {
                     <h3 className="ticker">{insight.ticker}</h3>
                     <p className="price">${insight.current_price.toFixed(2)}</p>
                   </div>
-                  <div className={`decision-badge ${getDecisionBadgeClass(insight.decision)}`}>
-                    {formatDecision(insight.decision)}
+                  <div className="insight-badges">
+                    <div className={`decision-badge ${getDecisionBadgeClass(insight.decision)}`}>
+                      {formatDecision(insight.decision)}
+                    </div>
+                    {insight.strategy_used && insight.strategy_used !== 'none' && (
+                      <span className="strategy-badge">Strategy: {formatStrategy(insight.strategy_used)}</span>
+                    )}
                   </div>
                 </div>
 
@@ -424,6 +446,23 @@ function InsightsTab() {
 
                 <div className="insight-reasoning">
                   <p>{insight.reasoning}</p>
+                  {insight.exit_targets && insight.decision !== 'NOTHING' && (
+                    <div className="exit-targets-inline">
+                      <div className="exit-targets-grid">
+                        <div className="exit-target-item">
+                          <span className="target-label">Take Profit</span>
+                          <span className="target-value profit">+{(insight.exit_targets.take_profit_pct * 100).toFixed(0)}%</span>
+                        </div>
+                        <div className="exit-target-item">
+                          <span className="target-label">Stop Loss</span>
+                          <span className="target-value loss">-{(insight.exit_targets.stop_loss_pct * 100).toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      {insight.exit_targets.rationale && (
+                        <p className="exit-rationale">{insight.exit_targets.rationale}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="insight-indicators">

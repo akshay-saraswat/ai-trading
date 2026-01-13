@@ -17,7 +17,7 @@ function SettingsTab() {
       OBV: true,
     },
     riskManagement: {
-      default_take_profit: 20,
+      default_take_profit: 10,
       default_stop_loss: 20,
       max_position_size: 1000,
       skip_market_schedule_check: false,

@@ -161,9 +161,11 @@ async def get_positions() -> List[Position]:
         if db_pos:
             tp = db_pos['take_profit']
             sl = db_pos['stop_loss']
+            strategy = db_pos.get('strategy_used', 'none')
         else:
             tp = settings.DEFAULT_TAKE_PROFIT
             sl = settings.DEFAULT_STOP_LOSS
+            strategy = 'none'
 
         positions.append(Position(
             position_id=option_id,
@@ -178,7 +180,8 @@ async def get_positions() -> List[Position]:
             take_profit=tp,
             stop_loss=sl,
             started_at=None,
-            source='robinhood'
+            source='robinhood',
+            strategy_used=strategy
         ))
 
     return positions
@@ -195,8 +198,44 @@ async def update_take_profit(position_id: str, request: UpdateTPSLRequest):
         trading_service.position_settings[position_id] = {}
     trading_service.position_settings[position_id]['take_profit'] = request.value / 100.0
 
-    # Update in DB
-    await db.update_position(position_id, {'take_profit': request.value / 100.0})
+    # Check if position exists in DB, if not create it
+    db_pos = await db.get_position(position_id)
+    if not db_pos:
+        # Position doesn't exist in DB (likely opened in Robinhood)
+        # Get position details from Robinhood
+        loop = asyncio.get_event_loop()
+        rh_positions = await loop.run_in_executor(
+            None,
+            trading_service.trader.get_all_open_option_positions
+        )
+
+        # Find the matching position
+        matching_pos = None
+        for pos in rh_positions:
+            if pos.get('option_id') == position_id:
+                matching_pos = pos
+                break
+
+        if matching_pos:
+            # Create position in DB with the new TP value
+            await db.create_position({
+                "id": position_id,
+                "ticker": matching_pos['ticker'],
+                "decision": matching_pos['decision'],
+                "option_id": position_id,
+                "strike": matching_pos['strike'],
+                "expiration": matching_pos['expiration'],
+                "contracts": matching_pos['contracts'],
+                "entry_price": matching_pos['entry_price'],
+                "take_profit": request.value / 100.0,
+                "stop_loss": settings.DEFAULT_STOP_LOSS,
+                "source": "robinhood"
+            })
+        else:
+            raise HTTPException(404, "Position not found")
+    else:
+        # Update existing position in DB
+        await db.update_position(position_id, {'take_profit': request.value / 100.0})
 
     return {"success": True, "message": f"TP updated to {request.value}%"}
 
@@ -212,8 +251,44 @@ async def update_stop_loss(position_id: str, request: UpdateTPSLRequest):
         trading_service.position_settings[position_id] = {}
     trading_service.position_settings[position_id]['stop_loss'] = request.value / 100.0
 
-    # Update in DB
-    await db.update_position(position_id, {'stop_loss': request.value / 100.0})
+    # Check if position exists in DB, if not create it
+    db_pos = await db.get_position(position_id)
+    if not db_pos:
+        # Position doesn't exist in DB (likely opened in Robinhood)
+        # Get position details from Robinhood
+        loop = asyncio.get_event_loop()
+        rh_positions = await loop.run_in_executor(
+            None,
+            trading_service.trader.get_all_open_option_positions
+        )
+
+        # Find the matching position
+        matching_pos = None
+        for pos in rh_positions:
+            if pos.get('option_id') == position_id:
+                matching_pos = pos
+                break
+
+        if matching_pos:
+            # Create position in DB with the new SL value
+            await db.create_position({
+                "id": position_id,
+                "ticker": matching_pos['ticker'],
+                "decision": matching_pos['decision'],
+                "option_id": position_id,
+                "strike": matching_pos['strike'],
+                "expiration": matching_pos['expiration'],
+                "contracts": matching_pos['contracts'],
+                "entry_price": matching_pos['entry_price'],
+                "take_profit": settings.DEFAULT_TAKE_PROFIT,
+                "stop_loss": request.value / 100.0,
+                "source": "robinhood"
+            })
+        else:
+            raise HTTPException(404, "Position not found")
+    else:
+        # Update existing position in DB
+        await db.update_position(position_id, {'stop_loss': request.value / 100.0})
 
     return {"success": True, "message": f"SL updated to {request.value}%"}
 
@@ -321,7 +396,8 @@ async def analyze_ticker_insight(ticker: str):
                 "market_price": market_price,
                 "limit_price": limit_price,
                 "max_contracts": max_contracts,
-                "cost_per_contract": market_price * 100
+                "cost_per_contract": market_price * 100,
+                "exit_targets": analysis.get('exit_targets')
             }
 
     return {
@@ -333,6 +409,7 @@ async def analyze_ticker_insight(ticker: str):
             "confidence": analysis['confidence'],
             "reasoning": analysis['reasoning'],
             "strategy_used": analysis.get('strategy_used', 'none'),
+            "exit_targets": analysis.get('exit_targets'),
             "indicators": indicators,
             "option": option_data
         }
@@ -370,6 +447,8 @@ async def place_option_trade(request: dict):
         strike = float(request.get('strike'))
         expiration = request.get('expiration')
         limit_price = float(request.get('limit_price'))
+        strategy_used = request.get('strategy_used', 'none')
+        exit_targets = request.get('exit_targets')
 
         if not all([option_id, ticker, decision, contracts > 0]):
             return {
@@ -400,8 +479,16 @@ async def place_option_trade(request: dict):
 
         if order:
             # Calculate take profit and stop loss
-            take_profit = limit_price * (1 + settings.DEFAULT_TAKE_PROFIT)
-            stop_loss = limit_price * (1 - settings.DEFAULT_STOP_LOSS)
+            # Use AI-suggested exit targets if available (bot trades), otherwise use defaults (Robinhood trades)
+            if exit_targets and exit_targets.get('take_profit_pct') is not None:
+                take_profit = limit_price * (1 + exit_targets['take_profit_pct'])
+            else:
+                take_profit = limit_price * (1 + settings.DEFAULT_TAKE_PROFIT)
+
+            if exit_targets and exit_targets.get('stop_loss_pct') is not None:
+                stop_loss = limit_price * (1 - exit_targets['stop_loss_pct'])
+            else:
+                stop_loss = limit_price * (1 - settings.DEFAULT_STOP_LOSS)
 
             # Save to database using create_position
             position_id = order.get('id', f"pos_{ticker}_{datetime.utcnow().timestamp()}")
@@ -416,7 +503,8 @@ async def place_option_trade(request: dict):
                 "entry_price": limit_price,
                 "take_profit": take_profit,
                 "stop_loss": stop_loss,
-                "source": "bot"
+                "source": "bot",
+                "strategy_used": strategy_used
             })
 
             return {

@@ -103,8 +103,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     # Calculate max contracts based on budget
                                     max_contracts = int(settings.MAX_POSITION_SIZE / (market_price * 100)) if market_price > 0 else 0
 
-                                    # Calculate entry and exit prices based on AI recommendations
-                                    entry_timing = analysis.get('entry_timing', {})
+                                    # Calculate exit prices based on AI recommendations
                                     exit_targets_pct = analysis.get('exit_targets', {})
 
                                     # Calculate actual exit prices from percentages
@@ -138,7 +137,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                         "max_contracts": max_contracts,
                                         "cost_per_contract": market_price * 100,
                                         "target_premium_pct": target_premium_pct,
-                                        "entry_timing": entry_timing,
+                                        "strategy_used": analysis.get('strategy_used', 'none'),
                                         "exit_targets": exit_targets
                                     }
                                     logger.info(f"Option recommendation created: {option_recommendation}")

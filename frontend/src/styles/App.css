@@ -753,7 +753,14 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+}
+
+.position-strategy-container {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .position-ticker {
@@ -1537,6 +1544,13 @@ body {
   font-family: 'Space Grotesk', sans-serif;
 }
 
+.insight-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
 .decision-badge {
   padding: 6px 12px;
   border-radius: 8px;
@@ -1609,6 +1623,99 @@ body {
 .insight-reasoning p {
   font-size: 14px;
   line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.insight-strategy-container {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin: -4px 0;
+}
+
+.timing-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warning);
+  margin-bottom: 8px;
+}
+
+.timing-rationale {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.insight-exit-targets {
+  padding: 14px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.insight-exit-targets h4 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.exit-targets-inline {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.exit-targets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.exit-target-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+}
+
+.target-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.target-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.target-value.profit {
+  color: var(--success);
+}
+
+.target-value.loss {
+  color: var(--danger);
+}
+
+.exit-rationale {
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--text-secondary);
   margin: 0;
 }
@@ -2418,7 +2525,6 @@ body {
   gap: 12px;
 }
 
-.entry-timing-card,
 .exit-targets-card {
   padding: 12px;
   background: var(--bg-secondary);

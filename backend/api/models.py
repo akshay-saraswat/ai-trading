@@ -26,6 +26,7 @@ class Position(BaseModel):
     stop_loss: Optional[float]
     started_at: Optional[str]
     source: str = 'bot'
+    strategy_used: Optional[str] = 'none'
 
 
 class UpdateTPSLRequest(BaseModel):

@@ -43,8 +43,8 @@ function ViewTab() {
 
   const handleEditTP = (position) => {
     setEditingPosition({ id: position.position_id, type: 'tp' });
-    // Default to 20% if not set
-    setTpValue(position.take_profit !== null ? (position.take_profit * 100).toString() : '20');
+    // Default to 10% if not set
+    setTpValue(position.take_profit !== null ? (position.take_profit * 100).toString() : '10');
   };
 
   const handleEditSL = (position) => {
@@ -55,16 +55,13 @@ function ViewTab() {
 
   const handleSaveTP = async (positionId) => {
     try {
-      console.log('Saving TP:', { positionId, value: parseFloat(tpValue) });
-      const response = await axios.put(`/api/positions/${positionId}/take-profit`, {
+      await axios.put(`/api/positions/${positionId}/take-profit`, {
         value: parseFloat(tpValue)
       });
-      console.log('TP update response:', response.data);
       await loadPositions();
       setEditingPosition(null);
       setError(null); // Clear any previous errors
     } catch (err) {
-      console.error('TP update error:', err);
       const errorMsg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Failed to update take-profit';
       setError(errorMsg);
       // Don't close the editor on error so user can retry
@@ -73,20 +70,32 @@ function ViewTab() {
 
   const handleSaveSL = async (positionId) => {
     try {
-      console.log('Saving SL:', { positionId, value: parseFloat(slValue) });
-      const response = await axios.put(`/api/positions/${positionId}/stop-loss`, {
+      await axios.put(`/api/positions/${positionId}/stop-loss`, {
         value: parseFloat(slValue)
       });
-      console.log('SL update response:', response.data);
       await loadPositions();
       setEditingPosition(null);
       setError(null); // Clear any previous errors
     } catch (err) {
-      console.error('SL update error:', err);
       const errorMsg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Failed to update stop-loss';
       setError(errorMsg);
       // Don't close the editor on error so user can retry
     }
+  };
+
+  const formatStrategy = (strategy) => {
+    const strategyMap = {
+      'mean_reversion': 'Mean Reversion',
+      'momentum': 'Momentum',
+      'trend_following': 'Trend Following',
+      'covered_call': 'Covered Call',
+      'cash_secured_put': 'Cash-Secured Put',
+      'bull_call_spread': 'Bull Call Spread',
+      'bear_put_spread': 'Bear Put Spread',
+      'straddle': 'Straddle',
+      'none': 'None'
+    };
+    return strategyMap[strategy] || strategy;
   };
 
   if (loading) {
@@ -139,6 +148,12 @@ function ViewTab() {
                   </div>
                 )}
               </div>
+
+              {position.strategy_used && position.strategy_used !== 'none' && (
+                <div className="position-strategy-container">
+                  <span className="strategy-badge">{formatStrategy(position.strategy_used)}</span>
+                </div>
+              )}
 
               <div className="position-details">
                 <div className="detail-row">

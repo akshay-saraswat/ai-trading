@@ -49,11 +49,6 @@ function ChatTab() {
 
     // Subscribe to messages
     const unsubscribeMessages = wsManager.onMessage((message) => {
-      console.log('Chat received message:', message);
-      if (message.data) {
-        console.log('Message data:', message.data);
-        console.log('Option recommendation:', message.data.option_recommendation);
-      }
       setMessages(prev => [...prev, message]);
       setIsTyping(false);
     });
@@ -141,7 +136,9 @@ function ChatTab() {
           contracts: contracts,
           strike: option.strike,
           expiration: option.expiration,
-          limit_price: option.limit_price
+          limit_price: option.limit_price,
+          strategy_used: option.strategy_used || 'none',
+          exit_targets: option.exit_targets
         })
       });
 

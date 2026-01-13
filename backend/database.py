@@ -49,6 +49,7 @@ class Database:
                 take_profit REAL NOT NULL,
                 stop_loss REAL NOT NULL,
                 source TEXT DEFAULT 'bot',
+                strategy_used TEXT DEFAULT 'none',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 status TEXT DEFAULT 'open'
@@ -91,8 +92,8 @@ class Database:
             INSERT INTO positions (
                 id, ticker, decision, option_id, strike, expiration,
                 contracts, entry_price, take_profit, stop_loss, source,
-                created_at, updated_at, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                strategy_used, created_at, updated_at, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             position_id,
             position['ticker'],
@@ -105,6 +106,7 @@ class Database:
             position['take_profit'],
             position['stop_loss'],
             position.get('source', 'bot'),
+            position.get('strategy_used', 'none'),
             now,
             now,
             'open'
