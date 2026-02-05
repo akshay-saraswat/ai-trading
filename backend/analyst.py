@@ -116,12 +116,32 @@ Analyze multiple stocks efficiently and provide JSON output for each."""
             news = news_map.get(ticker, [])
 
             # Format news with sentiment scores and relevance
+            # ENHANCED: Detect high-impact news for dynamic weighting
             news_str = "No recent news"
+            news_importance = "LOW"  # LOW, MEDIUM, HIGH
+
             if news:
                 news_items = []
                 total_sentiment = 0
                 weighted_sentiment = 0
                 total_weight = 0
+                max_importance_score = 0
+
+                # Keywords that indicate high-impact news
+                HIGH_IMPACT_PEOPLE = [
+                    'michael burry', 'burry', 'warren buffett', 'buffett',
+                    'cathie wood', 'bill ackman', 'ray dalio', 'jim cramer',
+                    'jpmorgan', 'goldman sachs', 'morgan stanley', 'bank of america',
+                    'citigroup', 'wells fargo', 'barclays', 'credit suisse'
+                ]
+                HIGH_IMPACT_KEYWORDS = [
+                    'bubble', 'overvalued', 'undervalued', 'crash', 'collapse',
+                    'downgrade', 'upgrade', 'target price', 'price target',
+                    'earnings beat', 'earnings miss', 'guidance', 'forecast',
+                    'fda approval', 'fda rejection', 'merger', 'acquisition',
+                    'scandal', 'investigation', 'lawsuit', 'bankruptcy',
+                    'short seller', 'short report', 'fraud', 'accounting'
+                ]
 
                 for n in news[:5]:  # Top 5 most relevant
                     sentiment = n.get('sentiment_score', 0)
@@ -129,18 +149,63 @@ Analyze multiple stocks efficiently and provide JSON output for each."""
                     publisher = n.get('publisher', 'Unknown')
                     title = n.get('title', 'N/A')
 
+                    # Calculate importance score for this news item
+                    importance_score = 0
+                    title_lower = title.lower()
+                    publisher_lower = publisher.lower()
+
+                    # Check for high-impact people/analysts
+                    for person in HIGH_IMPACT_PEOPLE:
+                        if person in title_lower or person in publisher_lower:
+                            importance_score += 3
+                            break
+
+                    # Check for high-impact keywords
+                    keyword_matches = sum(1 for keyword in HIGH_IMPACT_KEYWORDS if keyword in title_lower)
+                    importance_score += keyword_matches * 2
+
+                    # High sentiment magnitude indicates strong opinion
+                    if abs(sentiment) > 0.5:
+                        importance_score += 2
+                    elif abs(sentiment) > 0.3:
+                        importance_score += 1
+
+                    # High relevance indicates importance
+                    if relevance > 0.8:
+                        importance_score += 2
+                    elif relevance > 0.6:
+                        importance_score += 1
+
+                    max_importance_score = max(max_importance_score, importance_score)
+
+                    # Add importance indicator to news item
+                    importance_emoji = ""
+                    if importance_score >= 5:
+                        importance_emoji = "🔥 HIGH IMPACT - "
+                    elif importance_score >= 3:
+                        importance_emoji = "⚠️ IMPORTANT - "
+
                     sentiment_label = "📈 Positive" if sentiment > 0.2 else ("📉 Negative" if sentiment < -0.2 else "➡️ Neutral")
-                    news_items.append(f"  • [{publisher}] {title} ({sentiment_label} {sentiment:+.2f}, relevance: {relevance:.2f})")
+                    news_items.append(f"  • {importance_emoji}[{publisher}] {title} ({sentiment_label} {sentiment:+.2f}, relevance: {relevance:.2f})")
 
                     total_sentiment += sentiment
                     weighted_sentiment += sentiment * relevance
                     total_weight += relevance
+
+                # Determine overall news importance level
+                if max_importance_score >= 5:
+                    news_importance = "HIGH"
+                elif max_importance_score >= 3:
+                    news_importance = "MEDIUM"
+                else:
+                    news_importance = "LOW"
 
                 avg_sentiment = total_sentiment / len(news) if news else 0
                 weighted_avg_sentiment = weighted_sentiment / total_weight if total_weight > 0 else 0
 
                 news_str = "\n".join(news_items)
                 news_str += f"\n  Overall Sentiment: {weighted_avg_sentiment:+.2f} (unweighted: {avg_sentiment:+.2f})"
+                news_str += f"\n  📊 NEWS IMPORTANCE: {news_importance}"
 
             # Get key indicators
             rsi = indicators.get('RSI', 'N/A')
@@ -148,6 +213,11 @@ Analyze multiple stocks efficiently and provide JSON output for each."""
             sma_200 = indicators.get('SMA_200', 'N/A')
             macd = indicators.get('MACD', 'N/A')
             macd_signal = indicators.get('MACD_signal', 'N/A')
+            bb_high = indicators.get('BB_High', 'N/A')
+            bb_low = indicators.get('BB_Low', 'N/A')
+            atr = indicators.get('ATR', 'N/A')
+            adx = indicators.get('ADX', 'N/A')
+            stoch_k = indicators.get('Stoch_K', 'N/A')
 
             # Get social sentiment (if provided)
             social_sentiment = None
@@ -181,16 +251,75 @@ Analyze multiple stocks efficiently and provide JSON output for each."""
 - Signal: {signal_interpretation}
 - Confidence: {confidence}"""
 
+            # Calculate bearish/bullish signals
+            trend_signal = "N/A"
+            price_vs_sma = "N/A"
+            macd_signal_str = "N/A"
+            bb_position = "N/A"
+
+            if current_price != 'N/A' and sma_50 != 'N/A' and sma_200 != 'N/A':
+                # Trend alignment
+                if current_price > sma_50 > sma_200:
+                    trend_signal = "🟢 BULLISH (Golden alignment)"
+                elif current_price < sma_50 < sma_200:
+                    trend_signal = "🔴 BEARISH (Death alignment)"
+                elif sma_50 > sma_200 and current_price < sma_50:
+                    trend_signal = "🟡 Pullback in uptrend"
+                elif sma_50 < sma_200 and current_price > sma_50:
+                    trend_signal = "🟡 Rally in downtrend"
+                else:
+                    trend_signal = "⚪ Mixed/Unclear"
+
+                # Price position vs SMA50
+                deviation_pct = ((current_price - sma_50) / sma_50 * 100)
+                if deviation_pct > 5:
+                    price_vs_sma = f"🔴 {deviation_pct:+.1f}% above SMA50 (extended/overbought)"
+                elif deviation_pct < -5:
+                    price_vs_sma = f"🟢 {deviation_pct:+.1f}% below SMA50 (oversold)"
+                else:
+                    price_vs_sma = f"⚪ {deviation_pct:+.1f}% from SMA50 (normal range)"
+
+            # MACD crossover detection
+            if macd != 'N/A' and macd_signal != 'N/A':
+                macd_diff = macd - macd_signal
+                if macd > macd_signal and macd_diff > 0:
+                    macd_signal_str = "🟢 Bullish (MACD > Signal)"
+                elif macd < macd_signal and macd_diff < 0:
+                    macd_signal_str = "🔴 Bearish (MACD < Signal)"
+                else:
+                    macd_signal_str = "⚪ Neutral crossover"
+
+            # Bollinger Band position
+            if current_price != 'N/A' and bb_high != 'N/A' and bb_low != 'N/A':
+                bb_range = bb_high - bb_low
+                if bb_range > 0:
+                    bb_pct = (current_price - bb_low) / bb_range * 100
+                    if bb_pct > 80:
+                        bb_position = f"🔴 Upper band ({bb_pct:.0f}% - overbought)"
+                    elif bb_pct < 20:
+                        bb_position = f"🟢 Lower band ({bb_pct:.0f}% - oversold)"
+                    else:
+                        bb_position = f"⚪ Middle range ({bb_pct:.0f}%)"
+
             user_prompt += f"""
 ---
 **{ticker}**
 - Price: ${current_price:.2f}
-- RSI: {rsi if rsi != 'N/A' else 'N/A'}
+- Trend Alignment: {trend_signal}
+- Price vs SMA50: {price_vs_sma}
+
+**Technical Indicators:**
+- RSI: {f"{rsi:.1f}" if rsi != 'N/A' else 'N/A'} {("🔴 Overbought" if rsi != 'N/A' and rsi > 70 else ("🟢 Oversold" if rsi != 'N/A' and rsi < 30 else ""))}
+- Stochastic: {f"{stoch_k:.1f}" if stoch_k != 'N/A' else 'N/A'} {("🔴 Overbought" if stoch_k != 'N/A' and stoch_k > 80 else ("🟢 Oversold" if stoch_k != 'N/A' and stoch_k < 20 else ""))}
 - SMA50: {f"${sma_50:.2f}" if sma_50 != 'N/A' else 'N/A'}
 - SMA200: {f"${sma_200:.2f}" if sma_200 != 'N/A' else 'N/A'}
 - MACD: {f"{macd:.2f}" if macd != 'N/A' else 'N/A'}
-- MACD Signal: {f"{macd_signal:.2f}" if macd_signal != 'N/A' else 'N/A'}
-- Recent News (sorted by relevance):
+- MACD Signal: {f"{macd_signal:.2f}" if macd_signal != 'N/A' else 'N/A'} → {macd_signal_str}
+- Bollinger Position: {bb_position}
+- ATR (Volatility): {f"{atr:.2f}" if atr != 'N/A' else 'N/A'} {("🔥 High" if atr != 'N/A' and atr > current_price * 0.03 else "")}
+- ADX (Trend Strength): {f"{adx:.1f}" if adx != 'N/A' else 'N/A'} {("💪 Strong trend" if adx != 'N/A' and adx > 25 else ("📉 Weak trend" if adx != 'N/A' and adx < 20 else ""))}
+
+**Recent News (sorted by relevance):**
 {news_str}{social_str}
 
 """
@@ -450,22 +579,44 @@ START YOUR RESPONSE WITH {{ AND END WITH }} - NOTHING ELSE:
         """
         return """**Your Task: Analyze each ticker and CHOOSE the best trading strategy**
 
+⚠️ IMPORTANT: This system trades BOTH calls AND puts. Do NOT default to calls!
+- If indicators show bearish signals → Recommend BUY_PUT
+- If indicators show bullish signals → Recommend BUY_CALL
+- If indicators are mixed/weak → Recommend NOTHING
+
 Available Trading Strategies (choose the ONE that best fits the ticker's current conditions):
 
 1. **Mean Reversion** (Buying): Best when price has deviated significantly from its average
-   - BUY_CALL: RSI < 40 AND price is 3-8% below SMA50 (oversold, likely to bounce back)
-   - BUY_PUT: RSI > 60 AND price is 3-8% above SMA50 (overbought, likely to pull back)
+   - **BUY_CALL**: RSI < 35 AND (price 3-10% below SMA50 OR at lower Bollinger Band)
+     → Oversold, likely to bounce back toward mean
+   - **BUY_PUT**: RSI > 65 AND (price 3-10% above SMA50 OR at upper Bollinger Band)
+     → Overbought, likely to pull back toward mean
    - Exit targets: TP=30-40%, SL=20-25%
+   - Confidence: HIGH when both RSI and price position confirm the setup
 
 2. **Momentum** (Buying): Best when price is moving strongly in one direction with confirmation
-   - BUY_CALL: Strong uptrend with RSI 55-75, price above SMA50, positive MACD, bullish news
-   - BUY_PUT: Strong downtrend with RSI 25-45, price below SMA50, negative MACD, bearish news
-   - Exit targets: TP=40-60%, SL=15-20% (ride the momentum)
+   - **BUY_CALL**: Strong uptrend with:
+     • RSI 50-75 (in bullish zone but not overbought)
+     • Price > SMA50 > SMA200 (golden alignment)
+     • MACD > MACD Signal (bullish crossover)
+     • ADX > 25 (strong trend)
+     • Bullish news sentiment
+   - **BUY_PUT**: Strong downtrend with:
+     • RSI 25-50 (in bearish zone but not oversold)
+     • Price < SMA50 < SMA200 (death alignment)
+     • MACD < MACD Signal (bearish crossover)
+     • ADX > 25 (strong trend)
+     • Bearish news sentiment
+   - Exit targets: TP=40-60%, SL=15-20% (ride the momentum, but be ready to exit)
+   - Confidence: HIGH when 4+ indicators align in same direction
 
 3. **Trend Following** (Buying): Best when clear long-term trend is established
-   - BUY_CALL: Price > SMA50 > SMA200 (strong uptrend alignment)
-   - BUY_PUT: Price < SMA50 < SMA200 (strong downtrend alignment)
+   - **BUY_CALL**: Bullish alignment - Price > SMA50 > SMA200 (golden cross active)
+     → Buy on pullbacks to SMA50 support
+   - **BUY_PUT**: Bearish alignment - Price < SMA50 < SMA200 (death cross active)
+     → Buy puts on rallies to SMA50 resistance
    - Exit targets: TP=40-50%, SL=20-25%
+   - Confidence: HIGH when SMA alignment is clear and ADX > 20
 
 4. **Covered Call** (Selling - Income Strategy): Sell OTM calls for premium income
    - SELL_CALL: Neutral to slightly bullish, stock trading sideways or in range
@@ -489,32 +640,103 @@ Available Trading Strategies (choose the ONE that best fits the ticker's current
    - Use when indicators are conflicting but volatility is high
    - Exit targets: TP=50-80%, SL=30-40%
 
-**Decision Logic:**
-- If RSI < 35 or RSI > 65: Consider Mean Reversion (BUY)
-- If strong trend (MACD crossover, price far from SMA): Consider Momentum (BUY)
-- If stable trend alignment (SMA50 vs SMA200): Consider Trend Following (BUY)
-- If high IV + stock range-bound near resistance: Consider Covered Call (SELL_CALL)
-- If high IV + stock at support + willing to own: Consider Cash-Secured Put (SELL_PUT)
-- If mixed signals but moderate confidence: Consider Spreads
-- If high volatility expected with unclear direction: Consider Straddle
-- If weak/conflicting signals: Return NOTHING
+**Decision Logic (EQUAL WEIGHT for CALLS and PUTS):**
 
-**CRITICAL - Social Sentiment Weighting:**
-- Technical indicators (RSI, MACD, SMA) = PRIMARY (70% weight)
-- News sentiment = SECONDARY (20% weight)
-- Social sentiment = TERTIARY (10% weight) - USE AS CONFIRMATION, NOT DRIVER
+BULLISH SETUPS (BUY_CALL):
+- RSI < 35 AND price at/below lower Bollinger Band → Mean Reversion CALL
+- Strong uptrend: Price > SMA50 > SMA200 + MACD bullish + positive news → Momentum CALL
+- Golden alignment confirmed + ADX > 20 → Trend Following CALL
+- Contrarian buy signal (high bearish buzz but oversold technicals) → Mean Reversion CALL
 
-**Social Sentiment Contrarian Logic:**
+BEARISH SETUPS (BUY_PUT):
+- RSI > 65 AND price at/above upper Bollinger Band → Mean Reversion PUT
+- Strong downtrend: Price < SMA50 < SMA200 + MACD bearish + negative news → Momentum PUT
+- Death alignment confirmed + ADX > 20 → Trend Following PUT
+- Contrarian sell signal (extreme euphoria + overbought) → Mean Reversion PUT
+
+NEUTRAL/INCOME SETUPS:
+- High IV + range-bound near resistance → Covered Call (SELL_CALL)
+- High IV + at support + willing to own → Cash-Secured Put (SELL_PUT)
+- Mixed signals but moderate directional bias → Spreads
+- High volatility + unclear direction → Straddle
+
+AVOID (NOTHING):
+- Weak/conflicting signals
+- ADX < 15 (no trend strength)
+- Price consolidating between SMAs with no clear breakout
+- Neutral news + neutral technicals
+
+**BEARISH PATTERN RECOGNITION (Actively look for PUT opportunities):**
+🔴 **Strong Bearish Signals** (High confidence BUY_PUT):
+1. Death Cross: SMA50 recently crossed below SMA200 + price below both
+2. Overbought + Reversal: RSI > 70 + Stochastic > 80 + price at upper BB
+3. Failed Breakout: Price attempted to break resistance but rejected (bearish news confirms)
+4. Bearish Divergence: Price making new highs but RSI/MACD making lower highs
+5. Distribution: Price flat/up but volume declining + insiders selling (check news)
+
+🟡 **Moderate Bearish Signals** (Medium confidence BUY_PUT):
+1. Price below SMA50 with SMA50 trending down
+2. Negative MACD crossover + bearish news
+3. RSI > 60 in a downtrend (dead cat bounce - fade the rally)
+4. Contrarian sell signal: 90th+ percentile euphoria + overbought technicals
+
+⚠️ **DO NOT ignore bearish setups!** Puts are just as profitable as calls when timed correctly.
+
+**🔥 CRITICAL - DYNAMIC WEIGHTING SYSTEM (News Importance Determines Priority):**
+
+Each ticker shows a "NEWS IMPORTANCE" level (HIGH/MEDIUM/LOW). Use this to determine weighting:
+
+**WHEN NEWS IMPORTANCE = HIGH** (e.g., Michael Burry warning, major analyst downgrade, earnings surprise):
+- News sentiment = PRIMARY (70% weight) ← OVERRIDES TECHNICALS
+- Technical indicators (RSI, MACD, SMA, BB) = SECONDARY (20% weight) ← USE ONLY TO CONFIRM NEWS
+- Social sentiment = TERTIARY (10% weight)
+- **RULE: If HIGH IMPACT news is BEARISH → Strong BUY_PUT signal, IGNORE bullish technicals**
+- **RULE: If HIGH IMPACT news is BULLISH → Strong BUY_CALL signal, IGNORE bearish technicals**
+- Example: "Michael Burry warns PLTR bubble" (HIGH + negative sentiment) = Strong BUY_PUT, even if RSI is oversold
+
+**WHEN NEWS IMPORTANCE = MEDIUM** (e.g., company announcements, medium analyst coverage):
+- Technical indicators = PRIMARY (50% weight) ← BALANCE WITH NEWS
+- News sentiment = PRIMARY (40% weight) ← NEARLY EQUAL WEIGHT
+- Social sentiment = TERTIARY (10% weight)
+- **RULE: Technicals and news must ALIGN. If they conflict → NOTHING**
+- Example: Bullish news + bullish technicals = Strong signal. Bullish news + bearish technicals = NOTHING
+
+**WHEN NEWS IMPORTANCE = LOW** (e.g., routine articles, minor updates):
+- Technical indicators = PRIMARY (70% weight) ← TECHNICALS LEAD
+- News sentiment = SECONDARY (20% weight) ← CONFIRMATION ONLY
+- Social sentiment = TERTIARY (10% weight)
+- **RULE: Trade based on technicals, use news for confirmation**
+- Example: Oversold RSI + weak positive news = BUY_CALL (technicals drive the decision)
+
+**Social Sentiment Contrarian Logic (applies to all importance levels):**
 - ⚠️ CONTRARIAN SELL signal (90th+ percentile + high buzz) = REDUCE confidence in BUY_CALL by 20-30%
   Example: RSI says "buy" but social at 95th percentile → Lower confidence or switch to NOTHING
 - ✅ CONTRARIAN BUY signal (high buzz + bearish) = POTENTIAL opportunity but VERIFY with technicals first
 - ✅ Healthy bullish momentum = CONFIRMATION for existing bullish technical setup
-- ➡️ Neutral/low buzz = Ignore social sentiment, rely on technicals
+- ➡️ Neutral/low buzz = Ignore social sentiment, rely on primary factors
 
-**DO NOT let social sentiment override strong technical signals. Use it only to:**
-1. Reduce confidence when euphoria is extreme (contrarian sell)
-2. Confirm existing technical setups (bullish momentum)
-3. Identify potential bottoms (contrarian buy) if technicals also support
+**⚠️ EXAMPLES OF DYNAMIC WEIGHTING IN ACTION:**
+
+Example 1: PLTR with HIGH importance news
+- News: "🔥 HIGH IMPACT - Michael Burry warns of PLTR bubble" (📉 Negative -0.8)
+- Technicals: RSI 45 (neutral), MACD bullish
+- NEWS IMPORTANCE: HIGH
+- Decision: **BUY_PUT** (news 70% weight overrides bullish MACD)
+- Reasoning: High-impact bearish warning from famous investor OVERRIDES neutral/bullish technicals
+
+Example 2: AAPL with MEDIUM importance news
+- News: "⚠️ IMPORTANT - AAPL reports strong iPhone sales" (📈 Positive +0.5)
+- Technicals: RSI 72 (overbought), price at upper BB
+- NEWS IMPORTANCE: MEDIUM
+- Decision: **NOTHING** (news bullish 40%, technicals bearish 50% = CONFLICT)
+- Reasoning: Positive news conflicts with overbought technicals, no clear edge
+
+Example 3: TSLA with LOW importance news
+- News: "TSLA opens new service center" (📈 Positive +0.2)
+- Technicals: RSI 28 (oversold), price at lower BB, MACD bullish crossover
+- NEWS IMPORTANCE: LOW
+- Decision: **BUY_CALL** (technicals 70% weight drive decision)
+- Reasoning: Strong technical setup confirmed by mildly positive news
 
 **IMPORTANT**: In your response, set "strategy_used" to ONE of:
 - "mean_reversion"
@@ -532,6 +754,24 @@ The strategy_used field should explain WHY you chose that strategy based on the 
 - SELL_CALL: Only recommend if confident user owns 100+ shares OR is willing to buy 100 shares
 - SELL_PUT: Only recommend if confident user has cash collateral (strike × 100) OR is willing to be assigned
 - Both: Require HIGH implied volatility (expensive premiums make it worthwhile)
+
+**⚠️ FINAL REMINDER - NO BULLISH BIAS:**
+Before submitting your analysis, verify:
+1. Did you actively check for BEARISH signals? (Don't just default to calls!)
+2. If Price < SMA50 < SMA200 → Should be BUY_PUT (not call!)
+3. If RSI > 65 at upper BB → Should be BUY_PUT (not call!)
+4. If MACD bearish + negative news → Should be BUY_PUT (not call!)
+5. If overbought + contrarian sell signal → Should be BUY_PUT or NOTHING (not call!)
+
+**Example Decision Flow:**
+- AAPL: RSI 72, price 8% above SMA50, at upper BB, MACD bearish crossover
+  → ✅ BUY_PUT (mean reversion) - DO NOT recommend BUY_CALL!
+- TSLA: RSI 28, price 6% below SMA50, at lower BB, MACD bullish crossover
+  → ✅ BUY_CALL (mean reversion)
+- NVDA: Price < SMA50 < SMA200, RSI 35, bearish news, downtrend confirmed
+  → ✅ BUY_PUT (trend following) - DO NOT recommend BUY_CALL!
+
+Treat CALLS and PUTS with equal consideration. The goal is profit, not directional bias!
 """
 
 
