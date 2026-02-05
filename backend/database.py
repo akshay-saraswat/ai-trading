@@ -56,6 +56,23 @@ class Database:
             )
         ''')
 
+        # Migration: Add strategy_used column if it doesn't exist
+        try:
+            # Check if strategy_used column exists
+            cursor = await self.conn.execute("PRAGMA table_info(positions)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            if 'strategy_used' not in column_names:
+                logger.info("Migrating database: Adding strategy_used column to positions table")
+                await self.conn.execute('''
+                    ALTER TABLE positions ADD COLUMN strategy_used TEXT DEFAULT 'none'
+                ''')
+                await self.conn.commit()
+                logger.info("✅ Migration completed: strategy_used column added")
+        except Exception as e:
+            logger.warning(f"Migration check failed (this is OK for new databases): {e}")
+
         await self.conn.execute('''
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
