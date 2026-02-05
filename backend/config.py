@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 2000  # Increased for entry/exit point rationale
     BATCH_ANALYSIS_SIZE: int = 10  # Analyze up to 10 tickers in one AI call
 
+    # Data Source API Keys (for fallback when yfinance hits rate limits)
+    ALPHA_VANTAGE_API_KEY: Optional[str] = None
+    FINNHUB_API_KEY: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = True

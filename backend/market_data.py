@@ -1,7 +1,7 @@
 """
-Optimized Market Data Layer with Redis Caching
+Optimized Market Data Layer with Redis Caching and Intelligent Fallback
 Supports stocks and index options (SPX, NDX, RUT, etc.)
-Uses only yfinance - no investpy dependency
+Automatically switches between yfinance, AlphaVantage, and Finnhub on rate limits
 """
 import pandas as pd
 import ta
@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 from .cache import cache
 from .config import settings
+from .data_sources import DataSourceOrchestrator, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,12 @@ class MarketData:
     }
 
     def __init__(self):
-        pass
+        # Initialize intelligent fallback orchestrator
+        self.orchestrator = DataSourceOrchestrator(
+            alpha_vantage_key=settings.ALPHA_VANTAGE_API_KEY,
+            finnhub_key=settings.FINNHUB_API_KEY
+        )
+        logger.info("MarketData initialized with intelligent fallback system")
 
     def _normalize_ticker(self, ticker: str) -> str:
         """Normalize ticker (handle index symbols)"""
@@ -85,28 +91,15 @@ class MarketData:
                 df.index = pd.to_datetime(cached['index'])
                 return df
 
-        logger.debug(f"Cache MISS: {normalized_ticker} - fetching from Yahoo Finance")
+        logger.debug(f"Cache MISS: {normalized_ticker} - fetching with intelligent fallback")
 
-        # Fetch from yfinance using download method (more reliable than Ticker.history)
+        # Fetch using orchestrator (tries yfinance first, then fallbacks)
         try:
-            # Use yf.download() which is more stable
-            df = yf.download(
-                normalized_ticker,
-                period="1y",
-                progress=False
-            )
+            df = await self.orchestrator.get_historical_data(normalized_ticker)
 
             if df is None or df.empty:
-                logger.warning(f"No data found for {normalized_ticker}")
+                logger.warning(f"No data found for {normalized_ticker} from any source")
                 return None
-
-            # yf.download() returns MultiIndex columns for single ticker, flatten them
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-
-            # Rename 'Adj Close' to match expected format
-            if 'Adj Close' in df.columns:
-                df = df.rename(columns={'Adj Close': 'Adj_Close'})
 
             # Add technical indicators
             df = self._add_technical_indicators(df)
@@ -272,8 +265,8 @@ class MarketData:
 
         news_list = []
         try:
-            stock = yf.Ticker(normalized_ticker)
-            raw_news = stock.news
+            # Use orchestrator with fallback support (tries yfinance, then finnhub)
+            raw_news = await self.orchestrator.get_news(normalized_ticker)
 
             if raw_news and isinstance(raw_news, list):
                 for n in raw_news[:15]:  # Fetch more, filter later
@@ -282,7 +275,7 @@ class MarketData:
 
                     publisher = n.get('publisher', 'Unknown')
                     title = n.get('title', 'No title')
-                    published_time = n.get('providerPublishTime', 0)
+                    published_time = n.get('published', 0)
 
                     # Calculate sentiment score
                     sentiment_score = self._calculate_sentiment_score(title)
@@ -327,7 +320,7 @@ class MarketData:
 
     async def get_realtime_quote(self, ticker: str) -> Optional[float]:
         """
-        Get current price with 1-minute cache.
+        Get current price with 1-minute cache and intelligent fallback.
         Critical for real-time trading decisions.
 
         Args:
@@ -345,9 +338,8 @@ class MarketData:
             return cached
 
         try:
-            stock = yf.Ticker(normalized_ticker)
-            info = stock.info
-            price = info.get('currentPrice') or info.get('regularMarketPrice')
+            # Use orchestrator with fallback support
+            price = await self.orchestrator.get_quote(normalized_ticker)
 
             if price:
                 # Cache for 1 minute only
@@ -391,8 +383,8 @@ class MarketData:
         try:
             for ticker_symbol in market_tickers:
                 try:
-                    stock = yf.Ticker(ticker_symbol)
-                    raw_news = stock.news
+                    # Use orchestrator for market news (with fallback)
+                    raw_news = await self.orchestrator.get_news(ticker_symbol)
 
                     if raw_news and isinstance(raw_news, list):
                         for n in raw_news[:10]:  # Top 10 from each index
@@ -401,7 +393,7 @@ class MarketData:
 
                             title = n.get('title', '')
                             publisher = n.get('publisher', 'Unknown')
-                            published_time = n.get('providerPublishTime', 0)
+                            published_time = n.get('published', 0)
 
                             # Categorize news type based on keywords
                             category = self._categorize_market_news(title)
@@ -714,3 +706,13 @@ class MarketData:
         fallback = ['AAPL', 'TSLA', 'NVDA', 'AMD', 'AMZN', 'MSFT', 'GOOGL', 'META', 'NFLX', 'SPY'][:limit]
         await cache.set(cache_key, fallback, settings.CACHE_TTL_MARKET_DATA)
         return fallback
+
+    def get_data_source_status(self) -> Dict:
+        """
+        Get status of all data sources (for monitoring/debugging).
+        Shows which sources are available and circuit breaker states.
+
+        Returns:
+            Dict with status of each data source
+        """
+        return self.orchestrator.get_status()

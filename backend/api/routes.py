@@ -23,6 +23,7 @@ from ..config import settings
 from ..database import db
 from ..cache import cache
 from ..auth import auth_manager
+from ..market_data import MarketData
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,32 @@ async def get_login_status():
         "message": trading_service.login_state["message"],
         "logged_in": trading_service.trader.logged_in
     }
+
+
+@router.get("/api/data-sources/status")
+async def get_data_source_status():
+    """
+    Get status of all data sources (yfinance, AlphaVantage, Finnhub).
+    Shows circuit breaker states, availability, and failure counts.
+    Useful for monitoring rate limits and fallback health.
+    """
+    try:
+        # Get market data instance from trading service
+        md = trading_service.md
+        status = md.get_data_source_status()
+
+        return {
+            "status": "ok",
+            "data_sources": status,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching data source status: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 
 @router.get("/api/positions")
