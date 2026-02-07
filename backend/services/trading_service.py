@@ -74,6 +74,9 @@ class TradingService:
         await cache.connect()
         await db.connect()
 
+        # Load saved settings from database and apply to runtime config
+        await self._load_settings_from_database()
+
         # NOTE: Auto-login disabled - using web-based authentication instead
         # Users now login through the web interface
         # if settings.ROBINHOOD_USERNAME and settings.ROBINHOOD_PASSWORD:
@@ -85,6 +88,48 @@ class TradingService:
             logger.info(f"✅ Position monitoring started (checking every {settings.POSITION_CHECK_INTERVAL} seconds)")
 
         logger.info("✅ Trading service started (login via web interface)")
+
+    async def _load_settings_from_database(self):
+        """
+        Load saved settings from database and update runtime configuration.
+        This ensures settings persist across server restarts.
+        """
+        try:
+            settings_data = await db.get_settings()
+
+            if settings_data:
+                logger.info("Loading saved settings from database...")
+
+                # Update runtime settings with saved values
+                risk = settings_data.get('riskManagement', {})
+
+                if 'default_take_profit' in risk:
+                    settings.DEFAULT_TAKE_PROFIT = risk['default_take_profit'] / 100.0
+                    logger.info(f"  DEFAULT_TAKE_PROFIT = {settings.DEFAULT_TAKE_PROFIT:.2%}")
+
+                if 'default_stop_loss' in risk:
+                    settings.DEFAULT_STOP_LOSS = risk['default_stop_loss'] / 100.0
+                    logger.info(f"  DEFAULT_STOP_LOSS = {settings.DEFAULT_STOP_LOSS:.2%}")
+
+                if 'max_position_size' in risk:
+                    settings.MAX_POSITION_SIZE = float(risk['max_position_size'])
+                    logger.info(f"  MAX_POSITION_SIZE = ${settings.MAX_POSITION_SIZE:,.2f}")
+
+                if 'skip_market_schedule_check' in risk:
+                    settings.SKIP_MARKET_SCHEDULE_CHECK = bool(risk['skip_market_schedule_check'])
+                    logger.info(f"  SKIP_MARKET_SCHEDULE_CHECK = {settings.SKIP_MARKET_SCHEDULE_CHECK}")
+
+                if 'block_first_hour_trading' in risk:
+                    settings.BLOCK_FIRST_HOUR_TRADING = bool(risk['block_first_hour_trading'])
+                    logger.info(f"  BLOCK_FIRST_HOUR_TRADING = {settings.BLOCK_FIRST_HOUR_TRADING}")
+
+                logger.info("✅ Settings loaded successfully from database")
+            else:
+                logger.info("No saved settings found - using defaults from config.py")
+
+        except Exception as e:
+            logger.warning(f"Failed to load settings from database: {e}")
+            logger.info("Using default settings from config.py")
 
     async def shutdown(self):
         """
