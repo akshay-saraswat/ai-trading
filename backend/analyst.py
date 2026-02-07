@@ -36,7 +36,9 @@ class Analyst:
         indicators: Dict,
         news: List[Dict],
         market_news: List[Dict] = None,
-        social_sentiment: Dict = None
+        social_sentiment: Dict = None,
+        allowed_option_types: List[str] = None,
+        trading_style: str = 'swing'
     ) -> Dict:
         """
         Single ticker analysis (for backward compatibility)
@@ -48,6 +50,8 @@ class Analyst:
             news: Ticker-specific news
             market_news: Market-wide news (Fed, macro data, geopolitical events)
             social_sentiment: Social media sentiment with contrarian signals
+            allowed_option_types: List of allowed option types (BUY_CALL, BUY_PUT, SELL_CALL, SELL_PUT)
+            trading_style: 'day' or 'swing' trading style
         """
         results = self.analyze_batch(
             tickers=[ticker],
@@ -55,7 +59,9 @@ class Analyst:
             indicators_map={ticker: indicators},
             news_map={ticker: news},
             market_news=market_news,
-            social_sentiment_map={ticker: social_sentiment} if social_sentiment else None
+            social_sentiment_map={ticker: social_sentiment} if social_sentiment else None,
+            allowed_option_types=allowed_option_types,
+            trading_style=trading_style
         )
         return results.get(ticker, {
             "decision": "NOTHING",
@@ -71,7 +77,9 @@ class Analyst:
         indicators_map: Dict[str, Dict],
         news_map: Dict[str, List[Dict]],
         market_news: List[Dict] = None,
-        social_sentiment_map: Dict[str, Dict] = None
+        social_sentiment_map: Dict[str, Dict] = None,
+        allowed_option_types: List[str] = None,
+        trading_style: str = 'swing'
     ) -> Dict[str, Dict]:
         """
         BATCH ANALYSIS: Analyze multiple tickers in ONE AI call
@@ -84,10 +92,14 @@ class Analyst:
             news_map: Dict mapping ticker to news articles
             market_news: Market-wide news (Fed, macro, geopolitical events)
             social_sentiment_map: Dict mapping ticker to social sentiment data
+            allowed_option_types: List of allowed option types (BUY_CALL, BUY_PUT, SELL_CALL, SELL_PUT)
+            trading_style: 'day' or 'swing' trading style
 
         Returns:
             Dict mapping ticker to analysis result
         """
+        if allowed_option_types is None:
+            allowed_option_types = ['BUY_CALL', 'BUY_PUT']  # Default: buying only
         if not self.client:
             return {
                 ticker: {
@@ -336,7 +348,7 @@ Analyze multiple stocks efficiently and provide JSON output for each."""
 """
 
         # Add dynamic strategy selection instructions
-        strategy_text = self._build_dynamic_strategy_instructions()
+        strategy_text = self._build_dynamic_strategy_instructions(allowed_option_types, trading_style)
         user_prompt += f"""
 {strategy_text}
 
@@ -566,7 +578,7 @@ START YOUR RESPONSE WITH {{ AND END WITH }} - NOTHING ELSE:
 
         return result
 
-    def _build_dynamic_strategy_instructions(self) -> str:
+    def _build_dynamic_strategy_instructions(self, allowed_option_types: List[str], trading_style: str) -> str:
         """
         Build instructions that allow AI to dynamically choose the best strategy.
 
@@ -574,15 +586,53 @@ START YOUR RESPONSE WITH {{ AND END WITH }} - NOTHING ELSE:
         we present all available strategies and let the AI choose which one
         fits best for each ticker based on the technical indicators and market conditions.
 
+        Args:
+            allowed_option_types: List of allowed option types
+            trading_style: 'day' or 'swing'
+
         Returns:
             Strategy instructions for dynamic selection
         """
-        return """**Your Task: Analyze each ticker and CHOOSE the best trading strategy**
+        # Build allowed options text
+        allowed_text = "**USER'S ALLOWED OPTION TYPES:** " + ", ".join(allowed_option_types)
 
-⚠️ IMPORTANT: This system trades BOTH calls AND puts. Do NOT default to calls!
-- If indicators show bearish signals → Recommend BUY_PUT
-- If indicators show bullish signals → Recommend BUY_CALL
+        # Trading style guidance
+        style_guidance = ""
+        if trading_style == 'day':
+            style_guidance = """
+**TRADING STYLE: DAY TRADING**
+- Focus on short-term trades (0-3 days, often same-day exits)
+- Tighter take profit targets: 20-40% (quick profits)
+- Tighter stop losses: 15-25% (protect capital fast)
+- Prefer high-momentum setups with strong intraday catalysts
+- Look for quick reversals and intraday breakouts
+- Expiration: 0-7 DTE (days to expiration) for maximum gamma
+"""
+        else:  # swing trading
+            style_guidance = """
+**TRADING STYLE: SWING TRADING**
+- Focus on medium-term trades (3-30 days)
+- Wider take profit targets: 30-60% (let winners run)
+- Wider stop losses: 20-35% (room for pullbacks)
+- Prefer trend-following setups with multi-day momentum
+- Look for breakouts that can sustain over several days
+- Expiration: 14-45 DTE (days to expiration) for time decay balance
+"""
+
+        base_text = f"""**Your Task: Analyze each ticker and CHOOSE the best trading strategy**
+
+{allowed_text}
+
+⚠️ CRITICAL: Only recommend option types that are in the ALLOWED list above!
+- Do NOT recommend option types that are not allowed
+- If best setup requires a disallowed type, return NOTHING
+- If indicators show bearish signals AND BUY_PUT is allowed → Recommend BUY_PUT
+- If indicators show bullish signals AND BUY_CALL is allowed → Recommend BUY_CALL
+- If high IV + neutral AND SELL_CALL is allowed → Consider SELL_CALL
+- If high IV + at support AND SELL_PUT is allowed → Consider SELL_PUT
 - If indicators are mixed/weak → Recommend NOTHING
+
+{style_guidance}
 
 Available Trading Strategies (choose the ONE that best fits the ticker's current conditions):
 
@@ -630,16 +680,6 @@ Available Trading Strategies (choose the ONE that best fits the ticker's current
    - Exit targets: TP=50-70% of premium collected, SL=N/A (buy back if stock crashes through support)
    - ⚠️ REQUIRES: User must have cash collateral (strike price × 100)
 
-6. **Bull Call Spread / Bear Put Spread**: Best when moderate directional move expected
-   - Lower risk, lower reward strategy for uncertain markets
-   - Use when confidence is 0.5-0.7 (moderate, not strong)
-   - Exit targets: TP=25-35%, SL=25-30%
-
-7. **Straddle/Strangle**: Best when expecting high volatility but direction uncertain
-   - Buy both call and put when major catalyst (earnings, news) expected
-   - Use when indicators are conflicting but volatility is high
-   - Exit targets: TP=50-80%, SL=30-40%
-
 **Decision Logic (EQUAL WEIGHT for CALLS and PUTS):**
 
 BULLISH SETUPS (BUY_CALL):
@@ -657,8 +697,6 @@ BEARISH SETUPS (BUY_PUT):
 NEUTRAL/INCOME SETUPS:
 - High IV + range-bound near resistance → Covered Call (SELL_CALL)
 - High IV + at support + willing to own → Cash-Secured Put (SELL_PUT)
-- Mixed signals but moderate directional bias → Spreads
-- High volatility + unclear direction → Straddle
 
 AVOID (NOTHING):
 - Weak/conflicting signals
@@ -744,8 +782,6 @@ Example 3: TSLA with LOW importance news
 - "trend_following"
 - "covered_call" (for SELL_CALL)
 - "cash_secured_put" (for SELL_PUT)
-- "bull_call_spread" or "bear_put_spread"
-- "straddle"
 - "none" (if no clear opportunity)
 
 The strategy_used field should explain WHY you chose that strategy based on the ticker's indicators.
@@ -773,6 +809,8 @@ Before submitting your analysis, verify:
 
 Treat CALLS and PUTS with equal consideration. The goal is profit, not directional bias!
 """
+
+        return base_text
 
 
 # Global analyst instance

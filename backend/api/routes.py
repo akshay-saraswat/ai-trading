@@ -384,18 +384,40 @@ async def analyze_ticker_insight(ticker: str):
     # Get social sentiment (contrarian signals for extreme sentiment)
     social_sentiment = await trading_service.md.get_social_sentiment(ticker)
 
+    # Get user preferences for option types and trading style
+    user_settings = await db.get_settings()
+    allowed_option_types = []
+    trading_style = 'swing'  # default
+
+    if user_settings:
+        option_types = user_settings.get('optionTypes', {})
+        if option_types.get('buy_call', True):
+            allowed_option_types.append('BUY_CALL')
+        if option_types.get('buy_put', True):
+            allowed_option_types.append('BUY_PUT')
+        if option_types.get('sell_call', False):
+            allowed_option_types.append('SELL_CALL')
+        if option_types.get('sell_put', False):
+            allowed_option_types.append('SELL_PUT')
+        trading_style = user_settings.get('tradingStyle', 'swing')
+    else:
+        # Default: allow buy calls and puts only
+        allowed_option_types = ['BUY_CALL', 'BUY_PUT']
+
     # AI analysis (run in thread pool - calls AWS Bedrock)
     # Let the AI dynamically choose the best strategy
     analysis = await asyncio.to_thread(
         analyst.analyze_ticker,
         ticker, current_price, indicators, news,
         market_news,  # Market-wide context
-        social_sentiment  # Social sentiment with contrarian logic
+        social_sentiment,  # Social sentiment with contrarian logic
+        allowed_option_types,  # User's preferred option types
+        trading_style  # Day trading vs swing trading
     )
 
-    # Get option recommendation if decision is BUY_CALL or BUY_PUT
+    # Get option recommendation if decision is a BUY or SELL option
     option_data = None
-    if analysis['decision'] in ['BUY_CALL', 'BUY_PUT']:
+    if analysis['decision'] in ['BUY_CALL', 'BUY_PUT', 'SELL_CALL', 'SELL_PUT']:
         target_premium_pct = analysis.get('target_premium_pct', 0.95)
         # Find best option (run in thread pool - calls Robinhood API)
         option = await asyncio.to_thread(
@@ -567,36 +589,51 @@ async def get_settings():
     Get current application settings.
     Returns settings from database or defaults from config.
     """
+    # Default settings structure
+    defaults = {
+        'indicators': {
+            'RSI': True,
+            'MACD': True,
+            'Stochastic': True,
+            'SMA_20': True,
+            'SMA_50': True,
+            'SMA_200': True,
+            'EMA_12': True,
+            'EMA_26': True,
+            'Bollinger_Bands': True,
+            'ATR': True,
+            'ADX': True,
+            'OBV': True,
+        },
+        'optionTypes': {
+            'buy_call': True,
+            'buy_put': True,
+            'sell_call': False,
+            'sell_put': False,
+        },
+        'tradingStyle': 'swing',  # 'day' or 'swing'
+        'riskManagement': {
+            'default_take_profit': settings.DEFAULT_TAKE_PROFIT * 100,  # Convert to percentage
+            'default_stop_loss': settings.DEFAULT_STOP_LOSS * 100,
+            'max_position_size': settings.MAX_POSITION_SIZE,
+            'skip_market_schedule_check': settings.SKIP_MARKET_SCHEDULE_CHECK,
+            'block_first_hour_trading': settings.BLOCK_FIRST_HOUR_TRADING,
+        }
+    }
+
     # Get settings from database
     settings_data = await db.get_settings()
 
-    if not settings_data:
-        # Return defaults from config
-        settings_data = {
-            'indicators': {
-                'RSI': True,
-                'MACD': True,
-                'Stochastic': True,
-                'SMA_20': True,
-                'SMA_50': True,
-                'SMA_200': True,
-                'EMA_12': True,
-                'EMA_26': True,
-                'Bollinger_Bands': True,
-                'ATR': True,
-                'ADX': True,
-                'OBV': True,
-            },
-            'riskManagement': {
-                'default_take_profit': settings.DEFAULT_TAKE_PROFIT * 100,  # Convert to percentage
-                'default_stop_loss': settings.DEFAULT_STOP_LOSS * 100,
-                'max_position_size': settings.MAX_POSITION_SIZE,
-                'skip_market_schedule_check': settings.SKIP_MARKET_SCHEDULE_CHECK,
-                'block_first_hour_trading': settings.BLOCK_FIRST_HOUR_TRADING,
-            }
+    if settings_data:
+        # Merge database settings with defaults to ensure all fields exist
+        return {
+            'indicators': settings_data.get('indicators', defaults['indicators']),
+            'optionTypes': settings_data.get('optionTypes', defaults['optionTypes']),
+            'tradingStyle': settings_data.get('tradingStyle', defaults['tradingStyle']),
+            'riskManagement': settings_data.get('riskManagement', defaults['riskManagement']),
         }
 
-    return settings_data
+    return defaults
 
 
 @router.put("/api/settings")

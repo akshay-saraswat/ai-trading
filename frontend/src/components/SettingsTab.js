@@ -16,6 +16,13 @@ function SettingsTab() {
       ADX: true,
       OBV: true,
     },
+    optionTypes: {
+      buy_call: true,
+      buy_put: true,
+      sell_call: false,
+      sell_put: false,
+    },
+    tradingStyle: 'swing',  // 'day' or 'swing'
     riskManagement: {
       default_take_profit: 10,
       default_stop_loss: 20,
@@ -41,7 +48,13 @@ function SettingsTab() {
       const response = await fetch(`${baseUrl}/api/settings`);
       if (response.ok) {
         const data = await response.json();
-        setSettings(data);
+        // Merge with existing settings to preserve defaults for new fields
+        setSettings(prev => ({
+          indicators: data.indicators || prev.indicators,
+          optionTypes: data.optionTypes || prev.optionTypes,
+          tradingStyle: data.tradingStyle || prev.tradingStyle,
+          riskManagement: data.riskManagement || prev.riskManagement
+        }));
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -147,6 +160,147 @@ function SettingsTab() {
                 </label>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Option Types Section */}
+        <div className="settings-section">
+          <h3>📋 Option Types</h3>
+          <p className="section-description">Select which option strategies the bot can recommend</p>
+
+          <div className="option-types-grid">
+            <div className="option-type-item">
+              <label className="option-type-label">
+                <input
+                  type="checkbox"
+                  checked={settings.optionTypes.buy_call}
+                  onChange={() => setSettings(prev => ({
+                    ...prev,
+                    optionTypes: {
+                      ...prev.optionTypes,
+                      buy_call: !prev.optionTypes.buy_call
+                    }
+                  }))}
+                  className="setting-checkbox"
+                />
+                <div className="option-type-info">
+                  <span className="option-type-name">🟢 Buy Call</span>
+                  <span className="option-type-description">
+                    Bullish directional trade - Profit from price increases (most common)
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <div className="option-type-item">
+              <label className="option-type-label">
+                <input
+                  type="checkbox"
+                  checked={settings.optionTypes.buy_put}
+                  onChange={() => setSettings(prev => ({
+                    ...prev,
+                    optionTypes: {
+                      ...prev.optionTypes,
+                      buy_put: !prev.optionTypes.buy_put
+                    }
+                  }))}
+                  className="setting-checkbox"
+                />
+                <div className="option-type-info">
+                  <span className="option-type-name">🔴 Buy Put</span>
+                  <span className="option-type-description">
+                    Bearish directional trade - Profit from price decreases
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <div className="option-type-item">
+              <label className="option-type-label">
+                <input
+                  type="checkbox"
+                  checked={settings.optionTypes.sell_call}
+                  onChange={() => setSettings(prev => ({
+                    ...prev,
+                    optionTypes: {
+                      ...prev.optionTypes,
+                      sell_call: !prev.optionTypes.sell_call
+                    }
+                  }))}
+                  className="setting-checkbox"
+                />
+                <div className="option-type-info">
+                  <span className="option-type-name">💰 Sell Call (Covered Call)</span>
+                  <span className="option-type-description">
+                    Income strategy - Collect premium, neutral to slightly bullish (requires 100 shares)
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <div className="option-type-item">
+              <label className="option-type-label">
+                <input
+                  type="checkbox"
+                  checked={settings.optionTypes.sell_put}
+                  onChange={() => setSettings(prev => ({
+                    ...prev,
+                    optionTypes: {
+                      ...prev.optionTypes,
+                      sell_put: !prev.optionTypes.sell_put
+                    }
+                  }))}
+                  className="setting-checkbox"
+                />
+                <div className="option-type-info">
+                  <span className="option-type-name">💵 Sell Put (Cash-Secured Put)</span>
+                  <span className="option-type-description">
+                    Income strategy - Collect premium, willing to buy stock at strike (requires cash collateral)
+                  </span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div className="settings-warning">
+            ⚠️ <strong>Note on Selling Options:</strong> SELL_CALL requires owning 100 shares of the underlying stock.
+            SELL_PUT requires cash collateral equal to strike price × 100. Only enable if you meet these requirements.
+          </div>
+        </div>
+
+        {/* Trading Style Section */}
+        <div className="settings-section">
+          <h3>⏰ Trading Style</h3>
+          <p className="section-description">Choose your trading time horizon</p>
+
+          <div className="trading-style-selector">
+            <div
+              className={`trading-style-option ${settings.tradingStyle === 'day' ? 'active' : ''}`}
+              onClick={() => setSettings(prev => ({ ...prev, tradingStyle: 'day' }))}
+            >
+              <div className="trading-style-icon">📊</div>
+              <div className="trading-style-content">
+                <div className="trading-style-name">Day Trading</div>
+                <div className="trading-style-description">
+                  Short-term trades (0-3 days). Faster entries/exits, tighter stops, higher frequency.
+                  Focus on intraday momentum and quick profits.
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`trading-style-option ${settings.tradingStyle === 'swing' ? 'active' : ''}`}
+              onClick={() => setSettings(prev => ({ ...prev, tradingStyle: 'swing' }))}
+            >
+              <div className="trading-style-icon">📈</div>
+              <div className="trading-style-content">
+                <div className="trading-style-name">Swing Trading</div>
+                <div className="trading-style-description">
+                  Medium-term trades (3-30 days). Ride trends, wider stops, lower frequency.
+                  Focus on multi-day price movements and technical patterns.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
