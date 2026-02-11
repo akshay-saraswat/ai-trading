@@ -459,7 +459,7 @@ class DataSourceOrchestrator:
         # Define priority order for each data type
         self.historical_data_priority = ['yfinance', 'alphavantage']
         self.quote_priority = ['yfinance', 'alphavantage']
-        self.news_priority = ['yfinance', 'finnhub']
+        self.news_priority = ['finnhub', 'yfinance']  # Finnhub primary for news
 
     async def get_historical_data(self, ticker: str) -> Optional[pd.DataFrame]:
         """
