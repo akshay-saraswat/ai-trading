@@ -634,6 +634,30 @@ START YOUR RESPONSE WITH {{ AND END WITH }} - NOTHING ELSE:
 
 {style_guidance}
 
+🚨 **MANDATORY OVERRIDE RULES** (Check FIRST before any other analysis):
+
+1. **DEATH CROSS DETECTED** (Trend Alignment shows "🔴 BEARISH (Death alignment)"):
+   - If Price < SMA50 < SMA200 → **STRONG BUY_PUT SIGNAL**
+   - This is a PRIMARY bearish trend indicator
+   - Can ONLY be overridden by:
+     • HIGH importance BULLISH news (e.g., major positive earnings, acquisition)
+     • AND price showing strong reversal (RSI < 25 + bullish MACD crossover)
+   - DO NOT recommend BUY_CALL when in death cross unless above exceptions apply
+   - Even if RSI is oversold (30-40), death cross = falling knife, recommend BUY_PUT
+
+2. **GOLDEN CROSS DETECTED** (Trend Alignment shows "🟢 BULLISH (Golden alignment)"):
+   - If Price > SMA50 > SMA200 → **STRONG BUY_CALL SIGNAL**
+   - This is a PRIMARY bullish trend indicator
+   - Can ONLY be overridden by:
+     • HIGH importance BEARISH news (e.g., major negative earnings, scandal)
+     • AND price showing strong reversal (RSI > 75 + bearish MACD crossover)
+   - DO NOT recommend BUY_PUT when in golden cross unless above exceptions apply
+
+3. **TREND ALWAYS WINS OVER OSCILLATORS**:
+   - Death cross + oversold RSI (30-35) = BUY_PUT (don't catch falling knife)
+   - Golden cross + overbought RSI (70-75) = BUY_CALL (ride the momentum)
+   - Oversold/overbought are timing signals, NOT trend reversal signals
+
 Available Trading Strategies (choose the ONE that best fits the ticker's current conditions):
 
 1. **Mean Reversion** (Buying): Best when price has deviated significantly from its average
@@ -792,18 +816,25 @@ The strategy_used field should explain WHY you chose that strategy based on the 
 - Both: Require HIGH implied volatility (expensive premiums make it worthwhile)
 
 **⚠️ FINAL REMINDER - NO BULLISH BIAS:**
-Before submitting your analysis, verify:
-1. Did you actively check for BEARISH signals? (Don't just default to calls!)
-2. If Price < SMA50 < SMA200 → Should be BUY_PUT (not call!)
-3. If RSI > 65 at upper BB → Should be BUY_PUT (not call!)
-4. If MACD bearish + negative news → Should be BUY_PUT (not call!)
-5. If overbought + contrarian sell signal → Should be BUY_PUT or NOTHING (not call!)
+Before submitting your analysis, MANDATORY verification checklist:
+1. **CHECK TREND ALIGNMENT FIRST**:
+   - If "🔴 BEARISH (Death alignment)" → MUST be BUY_PUT (unless HIGH bullish news override)
+   - If "🟢 BULLISH (Golden alignment)" → MUST be BUY_CALL (unless HIGH bearish news override)
+2. Did you actively check for BEARISH signals? (Don't just default to calls!)
+3. If Price < SMA50 < SMA200 + dropping → BUY_PUT (falling knife, don't catch it!)
+4. If RSI > 65 at upper BB → Should be BUY_PUT (not call!)
+5. If MACD bearish + negative news → Should be BUY_PUT (not call!)
+6. If overbought + contrarian sell signal → Should be BUY_PUT or NOTHING (not call!)
+7. **DON'T LET OVERSOLD RSI OVERRIDE DEATH CROSS**: Oversold in downtrend = more room to fall
 
 **Example Decision Flow:**
+- PLTR: 🔴 Death alignment (Price < SMA50 < SMA200), RSI 35 (oversold), stock dropping
+  → ✅ BUY_PUT (trend following) - Oversold in downtrend = falling knife, MORE room to fall!
+  → ❌ DO NOT recommend BUY_CALL just because RSI is oversold!
 - AAPL: RSI 72, price 8% above SMA50, at upper BB, MACD bearish crossover
   → ✅ BUY_PUT (mean reversion) - DO NOT recommend BUY_CALL!
-- TSLA: RSI 28, price 6% below SMA50, at lower BB, MACD bullish crossover
-  → ✅ BUY_CALL (mean reversion)
+- TSLA: RSI 28, price 6% below SMA50, at lower BB, MACD bullish crossover, 🟢 Golden alignment
+  → ✅ BUY_CALL (mean reversion) - Golden cross confirmed, buy the dip
 - NVDA: Price < SMA50 < SMA200, RSI 35, bearish news, downtrend confirmed
   → ✅ BUY_PUT (trend following) - DO NOT recommend BUY_CALL!
 
