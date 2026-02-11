@@ -12,6 +12,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('chat');
   const [loginStatus, setLoginStatus] = useState({ status: 'idle', message: '' });
   const [authenticated, setAuthenticated] = useState(false);
+  const [robinhoodAuthenticated, setRobinhoodAuthenticated] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Theme management - default to system preference
@@ -43,10 +44,21 @@ function App() {
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('auth_token');
+      const rhAuth = localStorage.getItem('robinhood_authenticated') === 'true';
 
       if (!token) {
         setCheckingAuth(false);
         setAuthenticated(false);
+        setRobinhoodAuthenticated(false);
+        return;
+      }
+
+      // Check if user is in limited mode (skipped login)
+      if (token === 'limited_mode') {
+        setAuthenticated(true);
+        setRobinhoodAuthenticated(false);
+        setCheckingAuth(false);
+        setLoginStatus({ status: 'success', message: 'Limited mode - No trading' });
         return;
       }
 
@@ -58,18 +70,23 @@ function App() {
 
         if (response.data.authenticated) {
           setAuthenticated(true);
-          setLoginStatus({ status: 'success', message: 'Logged in' });
+          setRobinhoodAuthenticated(rhAuth);
+          setLoginStatus({ status: 'success', message: rhAuth ? 'Logged in' : 'Limited mode' });
         } else {
           // Token invalid - clear it
           localStorage.removeItem('auth_token');
+          localStorage.removeItem('robinhood_authenticated');
           delete axios.defaults.headers.common['Authorization'];
           setAuthenticated(false);
+          setRobinhoodAuthenticated(false);
         }
       } catch (error) {
         console.error('Auth check error:', error);
         localStorage.removeItem('auth_token');
+        localStorage.removeItem('robinhood_authenticated');
         delete axios.defaults.headers.common['Authorization'];
         setAuthenticated(false);
+        setRobinhoodAuthenticated(false);
       } finally {
         setCheckingAuth(false);
       }
@@ -83,24 +100,40 @@ function App() {
   };
 
   const handleLoginSuccess = (token) => {
-    // Configure axios to use the token
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    const rhAuth = localStorage.getItem('robinhood_authenticated') === 'true';
+
+    // Configure axios to use the token (unless in limited mode)
+    if (token !== 'limited_mode') {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+
     setAuthenticated(true);
-    setLoginStatus({ status: 'success', message: 'Logged in successfully' });
+    setRobinhoodAuthenticated(rhAuth);
+    setLoginStatus({
+      status: 'success',
+      message: rhAuth ? 'Logged in successfully' : 'Limited mode - No trading'
+    });
   };
 
   const handleLogout = () => {
     const token = localStorage.getItem('auth_token');
-    if (token) {
-      // Call logout endpoint
+    if (token && token !== 'limited_mode') {
+      // Call logout endpoint for real sessions
       axios.post('/api/auth/logout').catch(console.error);
     }
 
     // Clear local state
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('robinhood_authenticated');
     delete axios.defaults.headers.common['Authorization'];
     setAuthenticated(false);
+    setRobinhoodAuthenticated(false);
     setLoginStatus({ status: 'idle', message: '' });
+  };
+
+  const handleLoginRedirect = () => {
+    // Clear limited mode and show login page
+    handleLogout();
   };
 
   // Show loading while checking auth
@@ -151,12 +184,14 @@ function App() {
             >
               💬 Chat
             </button>
-            <button
-              className={`nav-menu-button ${activeTab === 'view' ? 'active' : ''}`}
-              onClick={() => setActiveTab('view')}
-            >
-              📊 Monitor
-            </button>
+            {robinhoodAuthenticated && (
+              <button
+                className={`nav-menu-button ${activeTab === 'view' ? 'active' : ''}`}
+                onClick={() => setActiveTab('view')}
+              >
+                📊 Monitor
+              </button>
+            )}
             <button
               className={`nav-menu-button ${activeTab === 'insights' ? 'active' : ''}`}
               onClick={() => setActiveTab('insights')}
@@ -179,30 +214,57 @@ function App() {
                 <i className="fas fa-moon"></i>
               )}
             </button>
-            <button
-              className="logout-button"
-              onClick={handleLogout}
-              title="Logout"
-              style={{
-                padding: '8px 16px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                color: 'var(--error-color, #ef4444)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-              }}
-            >
-              🚪 Logout
-            </button>
+            {robinhoodAuthenticated ? (
+              <button
+                className="logout-button"
+                onClick={handleLogout}
+                title="Logout"
+                style={{
+                  padding: '8px 16px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: 'var(--error-color, #ef4444)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                }}
+              >
+                🚪 Logout
+              </button>
+            ) : (
+              <button
+                className="login-button"
+                onClick={handleLoginRedirect}
+                title="Login to Robinhood"
+                style={{
+                  padding: '8px 16px',
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  color: 'var(--success-color, #22c55e)',
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(34, 197, 94, 0.1)';
+                }}
+              >
+                🔑 Login to Trade
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -215,12 +277,14 @@ function App() {
         >
           💬 Chat
         </button>
-        <button
-          className={`tab-button ${activeTab === 'view' ? 'active' : ''}`}
-          onClick={() => setActiveTab('view')}
-        >
-          📊 Monitor
-        </button>
+        {robinhoodAuthenticated && (
+          <button
+            className={`tab-button ${activeTab === 'view' ? 'active' : ''}`}
+            onClick={() => setActiveTab('view')}
+          >
+            📊 Monitor
+          </button>
+        )}
         <button
           className={`tab-button ${activeTab === 'insights' ? 'active' : ''}`}
           onClick={() => setActiveTab('insights')}
@@ -237,9 +301,9 @@ function App() {
 
       {/* Tab Content */}
       <div className="tab-content">
-        {activeTab === 'chat' && <ChatTab />}
-        {activeTab === 'view' && <ViewTab />}
-        {activeTab === 'insights' && <InsightsTab />}
+        {activeTab === 'chat' && <ChatTab robinhoodAuthenticated={robinhoodAuthenticated} />}
+        {activeTab === 'view' && robinhoodAuthenticated && <ViewTab robinhoodAuthenticated={robinhoodAuthenticated} />}
+        {activeTab === 'insights' && <InsightsTab robinhoodAuthenticated={robinhoodAuthenticated} />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
     </div>

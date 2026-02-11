@@ -25,6 +25,7 @@ function Login({ onLoginSuccess }) {
       if (response.data.success) {
         // Login successful - store token and call success callback
         localStorage.setItem('auth_token', response.data.token);
+        localStorage.setItem('robinhood_authenticated', 'true');
         onLoginSuccess(response.data.token);
       } else if (response.data.requires_mfa) {
         // MFA required - start polling
@@ -58,6 +59,7 @@ function Login({ onLoginSuccess }) {
           clearInterval(pollInterval);
           setMfaPolling(false);
           localStorage.setItem('auth_token', response.data.token);
+          localStorage.setItem('robinhood_authenticated', 'true');
           onLoginSuccess(response.data.token);
         } else if (response.data.pending) {
           // Still waiting...
@@ -93,6 +95,13 @@ function Login({ onLoginSuccess }) {
     setMfaPolling(false);
     setLoading(false);
     setError('');
+  };
+
+  const handleSkipLogin = () => {
+    // Set a special token indicating user is in limited mode (no Robinhood auth)
+    localStorage.setItem('auth_token', 'limited_mode');
+    localStorage.setItem('robinhood_authenticated', 'false');
+    onLoginSuccess('limited_mode');
   };
 
   return (
@@ -148,10 +157,22 @@ function Login({ onLoginSuccess }) {
               {loading ? 'Logging in...' : 'Login to Robinhood'}
             </button>
 
+            <button
+              type="button"
+              className="skip-button"
+              onClick={handleSkipLogin}
+              disabled={loading}
+            >
+              Continue Without Trading
+            </button>
+
             <div className="login-footer">
               <p>
                 <span className="info-icon">ℹ️</span>
                 Your credentials are never stored. Sessions expire after 24 hours.
+              </p>
+              <p className="skip-info">
+                Skip login to use chat, screener, and settings without trading capabilities.
               </p>
             </div>
           </form>

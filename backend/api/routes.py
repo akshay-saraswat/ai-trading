@@ -102,12 +102,23 @@ async def check_session(authorization: Optional[str] = Header(None)):
         return {"authenticated": False}
 
     token = authorization.replace("Bearer ", "")
+
+    # Handle limited mode (user skipped Robinhood login)
+    if token == "limited_mode":
+        return {
+            "authenticated": True,
+            "limited_mode": True,
+            "username": "Guest",
+            "message": "Limited mode - No trading available"
+        }
+
     authenticated = auth_manager.is_authenticated(token)
 
     if authenticated:
         session = auth_manager.get_session(token)
         return {
             "authenticated": True,
+            "limited_mode": False,
             "username": session.get('username'),
             "expires_at": session.get('expires_at').isoformat()
         }

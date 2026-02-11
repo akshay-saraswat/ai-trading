@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import wsManager from '../utils/websocket';
 
-function ChatTab() {
+function ChatTab({ robinhoodAuthenticated = false }) {
   // Persist messages across tab switches
   const [messages, setMessages] = useState(() => {
     try {

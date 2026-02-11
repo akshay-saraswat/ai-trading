@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-function InsightsTab() {
+function InsightsTab({ robinhoodAuthenticated = false }) {
   // Use localStorage to persist insights data across tab switches
   const [insights, setInsights] = useState(() => {
     try {
@@ -503,12 +503,26 @@ function InsightsTab() {
                         <span>${insight.option.limit_price.toFixed(2)}</span>
                       </div>
                     </div>
-                    <button
-                      className="btn-trade"
-                      onClick={() => handleTrade(insight)}
-                    >
-                      Trade
-                    </button>
+                    {robinhoodAuthenticated ? (
+                      <button
+                        className="btn-trade"
+                        onClick={() => handleTrade(insight)}
+                      >
+                        Trade
+                      </button>
+                    ) : (
+                      <div style={{
+                        padding: '12px',
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                        borderRadius: '8px',
+                        color: 'var(--text-secondary)',
+                        fontSize: '14px',
+                        textAlign: 'center'
+                      }}>
+                        Login to Robinhood to trade
+                      </div>
+                    )}
                   </div>
                 )}
 
