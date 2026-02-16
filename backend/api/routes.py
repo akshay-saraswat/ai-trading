@@ -13,7 +13,7 @@ import asyncio
 import logging
 from typing import List, Optional
 from datetime import datetime
-from fastapi import HTTPException, APIRouter, Header
+from fastapi import HTTPException, APIRouter, Header, Depends
 from pydantic import BaseModel
 
 from .models import Position, UpdateTPSLRequest
@@ -26,6 +26,34 @@ from ..auth import auth_manager
 from ..market_data import MarketData
 
 logger = logging.getLogger(__name__)
+
+
+# ==========================================
+# Authentication Dependency
+# ==========================================
+
+async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
+    """
+    Dependency to extract current username from Authorization header.
+    Raises HTTPException if not authenticated.
+    Returns username for use in database queries.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = authorization.replace("Bearer ", "")
+
+    # Special case: limited mode (no Robinhood login)
+    if token == "limited_mode":
+        return "limited_mode"
+
+    # Get session from auth manager
+    session = await auth_manager.get_session(token)
+
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return session['username']
 
 
 # Auth request models
@@ -90,7 +118,7 @@ async def logout(authorization: Optional[str] = Header(None)):
         return {"success": False, "message": "No token provided"}
 
     token = authorization.replace("Bearer ", "")
-    success = auth_manager.logout(token)
+    success = await auth_manager.logout(token)
 
     return {"success": success}
 
@@ -112,10 +140,10 @@ async def check_session(authorization: Optional[str] = Header(None)):
             "message": "Limited mode - No trading available"
         }
 
-    authenticated = auth_manager.is_authenticated(token)
+    authenticated = await auth_manager.is_authenticated(token)
 
     if authenticated:
-        session = auth_manager.get_session(token)
+        session = await auth_manager.get_session(token)
         return {
             "authenticated": True,
             "limited_mode": False,
@@ -180,8 +208,8 @@ async def get_data_source_status():
 
 
 @router.get("/api/positions")
-async def get_positions() -> List[Position]:
-    """Get all positions (from DB + live Robinhood sync)"""
+async def get_positions(current_user: str = Depends(get_current_user)) -> List[Position]:
+    """Get all positions (from DB + live Robinhood sync) for current user"""
     positions = []
 
     # Get positions from Robinhood
@@ -194,8 +222,8 @@ async def get_positions() -> List[Position]:
     for pos in rh_positions:
         option_id = pos.get('option_id', f"rh_{pos['ticker']}")
 
-        # Get settings from DB or use defaults
-        db_pos = await db.get_position(option_id)
+        # Get settings from DB or use defaults (filtered by user)
+        db_pos = await db.get_position(option_id, current_user)
         if db_pos:
             tp = db_pos['take_profit']
             sl = db_pos['stop_loss']
@@ -226,8 +254,12 @@ async def get_positions() -> List[Position]:
 
 
 @router.put("/api/positions/{position_id}/take-profit")
-async def update_take_profit(position_id: str, request: UpdateTPSLRequest):
-    """Update take-profit"""
+async def update_take_profit(
+    position_id: str,
+    request: UpdateTPSLRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update take-profit for specific user"""
     if request.value < 5 or request.value > 100:
         raise HTTPException(400, "Take-profit must be 5-100%")
 
@@ -237,7 +269,7 @@ async def update_take_profit(position_id: str, request: UpdateTPSLRequest):
     trading_service.position_settings[position_id]['take_profit'] = request.value / 100.0
 
     # Check if position exists in DB, if not create it
-    db_pos = await db.get_position(position_id)
+    db_pos = await db.get_position(position_id, current_user)
     if not db_pos:
         # Position doesn't exist in DB (likely opened in Robinhood)
         # Get position details from Robinhood
@@ -268,19 +300,23 @@ async def update_take_profit(position_id: str, request: UpdateTPSLRequest):
                 "take_profit": request.value / 100.0,
                 "stop_loss": settings.DEFAULT_STOP_LOSS,
                 "source": "robinhood"
-            })
+            }, current_user)
         else:
             raise HTTPException(404, "Position not found")
     else:
         # Update existing position in DB
-        await db.update_position(position_id, {'take_profit': request.value / 100.0})
+        await db.update_position(position_id, current_user, {'take_profit': request.value / 100.0})
 
     return {"success": True, "message": f"TP updated to {request.value}%"}
 
 
 @router.put("/api/positions/{position_id}/stop-loss")
-async def update_stop_loss(position_id: str, request: UpdateTPSLRequest):
-    """Update stop-loss"""
+async def update_stop_loss(
+    position_id: str,
+    request: UpdateTPSLRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update stop-loss for specific user"""
     if request.value < 1 or request.value > 50:
         raise HTTPException(400, "Stop-loss must be 1-50%")
 
@@ -290,7 +326,7 @@ async def update_stop_loss(position_id: str, request: UpdateTPSLRequest):
     trading_service.position_settings[position_id]['stop_loss'] = request.value / 100.0
 
     # Check if position exists in DB, if not create it
-    db_pos = await db.get_position(position_id)
+    db_pos = await db.get_position(position_id, current_user)
     if not db_pos:
         # Position doesn't exist in DB (likely opened in Robinhood)
         # Get position details from Robinhood
@@ -321,20 +357,20 @@ async def update_stop_loss(position_id: str, request: UpdateTPSLRequest):
                 "take_profit": settings.DEFAULT_TAKE_PROFIT,
                 "stop_loss": request.value / 100.0,
                 "source": "robinhood"
-            })
+            }, current_user)
         else:
             raise HTTPException(404, "Position not found")
     else:
         # Update existing position in DB
-        await db.update_position(position_id, {'stop_loss': request.value / 100.0})
+        await db.update_position(position_id, current_user, {'stop_loss': request.value / 100.0})
 
     return {"success": True, "message": f"SL updated to {request.value}%"}
 
 
 @router.delete("/api/positions/{position_id}")
-async def close_position(position_id: str):
-    """Close position manually"""
-    db_pos = await db.get_position(position_id)
+async def close_position(position_id: str, current_user: str = Depends(get_current_user)):
+    """Close position manually for specific user"""
+    db_pos = await db.get_position(position_id, current_user)
     if not db_pos:
         raise HTTPException(404, "Position not found")
 
@@ -352,7 +388,7 @@ async def close_position(position_id: str):
             trade_details
         )
 
-        await db.close_position(position_id, 0, "Manual close")
+        await db.close_position(position_id, current_user, 0, "Manual close")
 
         return {"success": True, "message": f"Closed {db_pos['ticker']}"}
 
@@ -595,9 +631,9 @@ async def place_option_trade(request: dict):
 # ========== SETTINGS ENDPOINTS ==========
 
 @router.get("/api/settings")
-async def get_settings():
+async def get_settings(current_user: str = Depends(get_current_user)):
     """
-    Get current application settings.
+    Get current application settings for specific user.
     Returns settings from database or defaults from config.
     """
     # Default settings structure
@@ -632,8 +668,8 @@ async def get_settings():
         }
     }
 
-    # Get settings from database
-    settings_data = await db.get_settings()
+    # Get settings from database for this user
+    settings_data = await db.get_settings(current_user)
 
     if settings_data:
         # Merge database settings with defaults to ensure all fields exist
@@ -648,14 +684,14 @@ async def get_settings():
 
 
 @router.put("/api/settings")
-async def update_settings(request: dict):
+async def update_settings(request: dict, current_user: str = Depends(get_current_user)):
     """
-    Update application settings.
+    Update application settings for specific user.
     Saves to database and updates runtime config.
     """
     try:
-        # Save to database
-        await db.save_settings(request)
+        # Save to database for this user
+        await db.save_settings(current_user, request)
 
         # Update runtime settings
         risk = request.get('riskManagement', {})
@@ -670,7 +706,7 @@ async def update_settings(request: dict):
         if 'block_first_hour_trading' in risk:
             settings.BLOCK_FIRST_HOUR_TRADING = bool(risk['block_first_hour_trading'])
 
-        logger.info(f"Settings updated: MAX_POSITION_SIZE={settings.MAX_POSITION_SIZE}, SKIP_MARKET_SCHEDULE_CHECK={settings.SKIP_MARKET_SCHEDULE_CHECK}, BLOCK_FIRST_HOUR_TRADING={settings.BLOCK_FIRST_HOUR_TRADING}")
+        logger.info(f"Settings updated for {current_user}: MAX_POSITION_SIZE={settings.MAX_POSITION_SIZE}, SKIP_MARKET_SCHEDULE_CHECK={settings.SKIP_MARKET_SCHEDULE_CHECK}, BLOCK_FIRST_HOUR_TRADING={settings.BLOCK_FIRST_HOUR_TRADING}")
 
         return {
             "success": True,
@@ -678,5 +714,5 @@ async def update_settings(request: dict):
         }
 
     except Exception as e:
-        logger.error(f"Error updating settings: {e}")
+        logger.error(f"Error updating settings for {current_user}: {e}")
         raise HTTPException(500, f"Failed to update settings: {str(e)}")

@@ -35,6 +35,7 @@ from ..database import db
 from ..market_data import MarketData
 from ..trader import Trader
 from ..market_schedule import MarketSchedule
+from ..auth import auth_manager
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,10 @@ class TradingService:
         await cache.connect()
         await db.connect()
 
+        # Inject database into auth manager for persistent session storage
+        auth_manager.db = db
+        logger.info("✅ Database injected into AuthManager for session persistence")
+
         # Load saved settings from database and apply to runtime config
         await self._load_settings_from_database()
 
@@ -93,12 +98,14 @@ class TradingService:
         """
         Load saved settings from database and update runtime configuration.
         This ensures settings persist across server restarts.
+        Uses 'default_user' for system-wide settings at startup.
         """
         try:
-            settings_data = await db.get_settings()
+            # Load settings for default_user as system-wide defaults
+            settings_data = await db.get_settings('default_user')
 
             if settings_data:
-                logger.info("Loading saved settings from database...")
+                logger.info("Loading saved settings from database (default_user)...")
 
                 # Update runtime settings with saved values
                 risk = settings_data.get('riskManagement', {})

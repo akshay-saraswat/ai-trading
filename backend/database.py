@@ -35,10 +35,23 @@ class Database:
             await self.conn.close()
 
     async def _create_tables(self):
-        """Create database schema"""
+        """Create database schema with multi-tenancy support"""
+        # Sessions table for persistent authentication
+        await self.conn.execute('''
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                device_token TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                logged_in INTEGER DEFAULT 1
+            )
+        ''')
+
         await self.conn.execute('''
             CREATE TABLE IF NOT EXISTS positions (
                 id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT 'default_user',
                 ticker TEXT NOT NULL,
                 decision TEXT NOT NULL,
                 option_id TEXT,
@@ -56,26 +69,18 @@ class Database:
             )
         ''')
 
-        # Migration: Add strategy_used column if it doesn't exist
-        try:
-            # Check if strategy_used column exists
-            cursor = await self.conn.execute("PRAGMA table_info(positions)")
-            columns = await cursor.fetchall()
-            column_names = [col[1] for col in columns]
-
-            if 'strategy_used' not in column_names:
-                logger.info("Migrating database: Adding strategy_used column to positions table")
-                await self.conn.execute('''
-                    ALTER TABLE positions ADD COLUMN strategy_used TEXT DEFAULT 'none'
-                ''')
-                await self.conn.commit()
-                logger.info("✅ Migration completed: strategy_used column added")
-        except Exception as e:
-            logger.warning(f"Migration check failed (this is OK for new databases): {e}")
+        # Create indexes for performance
+        await self.conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_positions_user_id ON positions(user_id)
+        ''')
+        await self.conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_positions_user_status ON positions(user_id, status)
+        ''')
 
         await self.conn.execute('''
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT 'default_user',
                 position_id TEXT NOT NULL,
                 ticker TEXT NOT NULL,
                 action TEXT NOT NULL,
@@ -89,30 +94,41 @@ class Database:
         ''')
 
         await self.conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trades(user_id)
+        ''')
+
+        await self.conn.execute('''
             CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                key TEXT NOT NULL,
                 value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, key)
             )
+        ''')
+
+        await self.conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id)
         ''')
 
         await self.conn.commit()
 
     # ========== Position Management ==========
 
-    async def create_position(self, position: Dict) -> str:
-        """Create new position"""
+    async def create_position(self, position: Dict, user_id: str) -> str:
+        """Create new position for specific user"""
         now = datetime.now().isoformat()
         position_id = position['id']
 
         await self.conn.execute('''
             INSERT INTO positions (
-                id, ticker, decision, option_id, strike, expiration,
+                id, user_id, ticker, decision, option_id, strike, expiration,
                 contracts, entry_price, take_profit, stop_loss, source,
                 strategy_used, created_at, updated_at, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             position_id,
+            user_id,
             position['ticker'],
             position['decision'],
             position.get('option_id'),
@@ -129,14 +145,14 @@ class Database:
             'open'
         ))
         await self.conn.commit()
-        logger.info(f"Created position: {position_id} - {position['ticker']}")
+        logger.info(f"Created position for {user_id}: {position_id} - {position['ticker']}")
         return position_id
 
-    async def get_position(self, position_id: str) -> Optional[Dict]:
-        """Get position by ID"""
+    async def get_position(self, position_id: str, user_id: str) -> Optional[Dict]:
+        """Get position by ID for specific user"""
         cursor = await self.conn.execute(
-            'SELECT * FROM positions WHERE id = ?',
-            (position_id,)
+            'SELECT * FROM positions WHERE id = ? AND user_id = ?',
+            (position_id, user_id)
         )
         row = await cursor.fetchone()
 
@@ -144,30 +160,31 @@ class Database:
             return dict(row)
         return None
 
-    async def get_open_positions(self) -> List[Dict]:
-        """Get all open positions"""
+    async def get_open_positions(self, user_id: str) -> List[Dict]:
+        """Get all open positions for specific user"""
         cursor = await self.conn.execute(
-            "SELECT * FROM positions WHERE status = 'open' ORDER BY created_at DESC"
+            "SELECT * FROM positions WHERE user_id = ? AND status = 'open' ORDER BY created_at DESC",
+            (user_id,)
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
-    async def update_position(self, position_id: str, updates: Dict):
-        """Update position fields"""
+    async def update_position(self, position_id: str, user_id: str, updates: Dict):
+        """Update position fields for specific user"""
         updates['updated_at'] = datetime.now().isoformat()
 
         set_clause = ', '.join([f"{k} = ?" for k in updates.keys()])
-        values = list(updates.values()) + [position_id]
+        values = list(updates.values()) + [position_id, user_id]
 
         await self.conn.execute(
-            f'UPDATE positions SET {set_clause} WHERE id = ?',
+            f'UPDATE positions SET {set_clause} WHERE id = ? AND user_id = ?',
             values
         )
         await self.conn.commit()
 
-    async def close_position(self, position_id: str, exit_price: float, reason: str = None):
-        """Close position and record trade"""
-        position = await self.get_position(position_id)
+    async def close_position(self, position_id: str, user_id: str, exit_price: float, reason: str = None):
+        """Close position and record trade for specific user"""
+        position = await self.get_position(position_id, user_id)
         if not position:
             raise ValueError(f"Position not found: {position_id}")
 
@@ -175,10 +192,11 @@ class Database:
         pnl = (exit_price - position['entry_price']) * position['contracts'] * 100
 
         # Update position status
-        await self.update_position(position_id, {'status': 'closed'})
+        await self.update_position(position_id, user_id, {'status': 'closed'})
 
         # Record trade
         await self.record_trade(
+            user_id=user_id,
             position_id=position_id,
             ticker=position['ticker'],
             action='SELL',
@@ -188,10 +206,11 @@ class Database:
             reason=reason
         )
 
-        logger.info(f"Closed position: {position_id} - P&L: ${pnl:.2f}")
+        logger.info(f"Closed position for {user_id}: {position_id} - P&L: ${pnl:.2f}")
 
     async def record_trade(
         self,
+        user_id: str,
         position_id: str,
         ticker: str,
         action: str,
@@ -200,12 +219,13 @@ class Database:
         pnl: Optional[float] = None,
         reason: Optional[str] = None
     ):
-        """Record trade history"""
+        """Record trade history for specific user"""
         await self.conn.execute('''
             INSERT INTO trades (
-                position_id, ticker, action, price, contracts, pnl, reason, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                user_id, position_id, ticker, action, price, contracts, pnl, reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
+            user_id,
             position_id,
             ticker,
             action,
@@ -217,47 +237,51 @@ class Database:
         ))
         await self.conn.commit()
 
-    async def get_trade_history(self, limit: int = 100) -> List[Dict]:
-        """Get trade history"""
+    async def get_trade_history(self, user_id: str, limit: int = 100) -> List[Dict]:
+        """Get trade history for specific user"""
         cursor = await self.conn.execute(
-            'SELECT * FROM trades ORDER BY created_at DESC LIMIT ?',
-            (limit,)
+            'SELECT * FROM trades WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+            (user_id, limit)
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
     # ========== Settings Management ==========
 
-    async def get_setting(self, key: str) -> Optional[str]:
-        """Get setting value"""
+    async def get_setting(self, user_id: str, key: str) -> Optional[str]:
+        """Get setting value for specific user"""
         cursor = await self.conn.execute(
-            'SELECT value FROM settings WHERE key = ?',
-            (key,)
+            'SELECT value FROM settings WHERE user_id = ? AND key = ?',
+            (user_id, key)
         )
         row = await cursor.fetchone()
         return row['value'] if row else None
 
-    async def set_setting(self, key: str, value: str):
-        """Set setting value"""
+    async def set_setting(self, user_id: str, key: str, value: str):
+        """Set setting value for specific user"""
         await self.conn.execute('''
-            INSERT OR REPLACE INTO settings (key, value, updated_at)
-            VALUES (?, ?, ?)
-        ''', (key, value, datetime.now().isoformat()))
+            INSERT OR REPLACE INTO settings (user_id, key, value, updated_at)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, key, value, datetime.now().isoformat()))
         await self.conn.commit()
 
-    async def get_all_settings(self) -> Dict:
-        """Get all settings as dict"""
-        cursor = await self.conn.execute('SELECT key, value FROM settings')
+    async def get_all_settings(self, user_id: str) -> Dict:
+        """Get all settings as dict for specific user"""
+        cursor = await self.conn.execute(
+            'SELECT key, value FROM settings WHERE user_id = ?',
+            (user_id,)
+        )
         rows = await cursor.fetchall()
         return {row['key']: row['value'] for row in rows}
 
     # ========== Analytics ==========
 
-    async def get_performance_stats(self) -> Dict:
-        """Calculate performance statistics"""
+    async def get_performance_stats(self, user_id: str) -> Dict:
+        """Calculate performance statistics for specific user"""
         # Total P&L
         cursor = await self.conn.execute(
-            'SELECT SUM(pnl) as total_pnl, COUNT(*) as total_trades FROM trades WHERE pnl IS NOT NULL'
+            'SELECT SUM(pnl) as total_pnl, COUNT(*) as total_trades FROM trades WHERE user_id = ? AND pnl IS NOT NULL',
+            (user_id,)
         )
         row = await cursor.fetchone()
 
@@ -266,7 +290,8 @@ class Database:
 
         # Win rate
         cursor = await self.conn.execute(
-            'SELECT COUNT(*) as wins FROM trades WHERE pnl > 0'
+            'SELECT COUNT(*) as wins FROM trades WHERE user_id = ? AND pnl > 0',
+            (user_id,)
         )
         wins = (await cursor.fetchone())['wins']
 
@@ -282,15 +307,15 @@ class Database:
             'avg_pnl': avg_pnl
         }
 
-    async def get_settings(self) -> Optional[Dict]:
+    async def get_settings(self, user_id: str) -> Optional[Dict]:
         """
-        Get application settings from database.
+        Get application settings from database for specific user.
         Returns None if no settings exist.
         """
         try:
             cursor = await self.conn.execute(
-                'SELECT value FROM settings WHERE key = ?',
-                ('app_settings',)
+                'SELECT value FROM settings WHERE user_id = ? AND key = ?',
+                (user_id, 'app_settings')
             )
             row = await cursor.fetchone()
 
@@ -299,27 +324,27 @@ class Database:
             return None
 
         except Exception as e:
-            logger.error(f"Error getting settings: {e}")
+            logger.error(f"Error getting settings for {user_id}: {e}")
             return None
 
-    async def save_settings(self, settings_data: Dict):
+    async def save_settings(self, user_id: str, settings_data: Dict):
         """
-        Save application settings to database.
+        Save application settings to database for specific user.
         """
         try:
             settings_json = json.dumps(settings_data)
             now = datetime.utcnow().isoformat()
 
             await self.conn.execute('''
-                INSERT OR REPLACE INTO settings (key, value, updated_at)
-                VALUES (?, ?, ?)
-            ''', ('app_settings', settings_json, now))
+                INSERT OR REPLACE INTO settings (user_id, key, value, updated_at)
+                VALUES (?, ?, ?, ?)
+            ''', (user_id, 'app_settings', settings_json, now))
 
             await self.conn.commit()
-            logger.info("Settings saved to database")
+            logger.info(f"Settings saved for {user_id}")
 
         except Exception as e:
-            logger.error(f"Error saving settings: {e}")
+            logger.error(f"Error saving settings for {user_id}: {e}")
             raise
 
 

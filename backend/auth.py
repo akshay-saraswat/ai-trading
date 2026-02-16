@@ -6,12 +6,15 @@ import secrets
 import hashlib
 import json
 import logging
-from typing import Optional, Dict
+from typing import Optional, Dict, TYPE_CHECKING
 from datetime import datetime, timedelta
 import robin_stocks.robinhood as rh
 from fastapi import HTTPException
 import pickle
 import base64
+
+if TYPE_CHECKING:
+    from .database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +22,9 @@ logger = logging.getLogger(__name__)
 class AuthManager:
     """Manages Robinhood authentication and sessions"""
 
-    def __init__(self):
-        self.sessions: Dict[str, Dict] = {}  # session_token -> session_data
+    def __init__(self, db: 'Database' = None):
+        self.db = db  # Database instance for persistent session storage
+        self.sessions: Dict[str, Dict] = {}  # In-memory cache: session_token -> session_data
         self.mfa_challenges: Dict[str, Dict] = {}  # challenge_id -> challenge_data
         self.mfa_login_attempted: Dict[str, bool] = {}  # challenge_id -> whether we've tried login
 
@@ -148,13 +152,34 @@ class AuthManager:
                 # MFA approved - create session
                 session_token = self.create_session_token()
 
-                self.sessions[session_token] = {
+                created_at = datetime.utcnow()
+                expires_at = created_at + timedelta(hours=24)
+
+                session_data = {
                     'username': challenge['username'],
                     'device_token': result.get('device_token'),
-                    'created_at': datetime.utcnow(),
-                    'expires_at': datetime.utcnow() + timedelta(hours=24),
+                    'created_at': created_at,
+                    'expires_at': expires_at,
                     'logged_in': True
                 }
+
+                # Save to database for persistence
+                if self.db:
+                    await self.db.conn.execute('''
+                        INSERT INTO sessions (token, username, device_token, created_at, expires_at, logged_in)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (
+                        session_token,
+                        challenge['username'],
+                        result.get('device_token'),
+                        created_at.isoformat(),
+                        expires_at.isoformat(),
+                        1
+                    ))
+                    await self.db.conn.commit()
+
+                # Also cache in memory for performance
+                self.sessions[session_token] = session_data
 
                 # Clean up challenge (safe deletion to avoid race condition)
                 self.mfa_challenges.pop(challenge_id, None)
@@ -271,32 +296,75 @@ class AuthManager:
             logger.warning(f"MFA check error (returning pending): {str(e)}")
             return {'pending': True}
 
-    def get_session(self, token: str) -> Optional[Dict]:
-        """Get session data by token"""
-        session = self.sessions.get(token)
-
-        if not session:
-            return None
-
-        # Check if expired
-        if datetime.utcnow() > session['expires_at']:
-            del self.sessions[token]
-            return None
-
-        return session
-
-    def logout(self, token: str) -> bool:
-        """Logout and invalidate session"""
+    async def get_session(self, token: str) -> Optional[Dict]:
+        """Get session data by token (checks database for persistence)"""
+        # First check in-memory cache
         if token in self.sessions:
-            # Logout from Robinhood
-            try:
-                rh.logout()
-            except:
-                pass
+            session = self.sessions[token]
+            # Check if expired
+            if datetime.utcnow() > session['expires_at']:
+                # Expired - remove from cache and database
+                del self.sessions[token]
+                if self.db:
+                    await self.db.conn.execute('DELETE FROM sessions WHERE token = ?', (token,))
+                    await self.db.conn.commit()
+                return None
+            return session
 
+        # Not in cache - check database
+        if self.db:
+            cursor = await self.db.conn.execute(
+                'SELECT * FROM sessions WHERE token = ?',
+                (token,)
+            )
+            row = await cursor.fetchone()
+
+            if row:
+                # Parse datetime strings
+                expires_at = datetime.fromisoformat(row['expires_at'])
+
+                # Check if expired
+                if datetime.utcnow() > expires_at:
+                    await self.db.conn.execute('DELETE FROM sessions WHERE token = ?', (token,))
+                    await self.db.conn.commit()
+                    return None
+
+                # Load into cache
+                session_data = {
+                    'username': row['username'],
+                    'device_token': row['device_token'],
+                    'created_at': datetime.fromisoformat(row['created_at']),
+                    'expires_at': expires_at,
+                    'logged_in': bool(row['logged_in'])
+                }
+                self.sessions[token] = session_data
+                return session_data
+
+        return None
+
+    async def logout(self, token: str) -> bool:
+        """Logout and invalidate session (removes from database and cache)"""
+        # Remove from cache
+        if token in self.sessions:
             del self.sessions[token]
-            return True
-        return False
+
+        # Remove from database
+        if self.db:
+            await self.db.conn.execute('DELETE FROM sessions WHERE token = ?', (token,))
+            await self.db.conn.commit()
+
+        # Logout from Robinhood
+        try:
+            rh.logout()
+        except:
+            pass
+
+        return True
+
+    async def is_authenticated(self, token: str) -> bool:
+        """Check if token is valid and not expired"""
+        session = await self.get_session(token)
+        return session is not None
 
     def is_authenticated(self, token: Optional[str]) -> bool:
         """Check if session token is valid"""
