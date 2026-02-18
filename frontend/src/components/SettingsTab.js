@@ -45,7 +45,19 @@ function SettingsTab() {
       // Check if running in development (React dev server on port 3000)
       const isDevelopment = window.location.port === '3000';
       const baseUrl = isDevelopment ? 'http://localhost:8000' : '';
-      const response = await fetch(`${baseUrl}/api/settings`);
+
+      // Get auth token from localStorage
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add Authorization header if token exists
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${baseUrl}/api/settings`, { headers });
       if (response.ok) {
         const data = await response.json();
         // Merge with existing settings to preserve defaults for new fields
@@ -90,11 +102,21 @@ function SettingsTab() {
       // Check if running in development (React dev server on port 3000)
       const isDevelopment = window.location.port === '3000';
       const baseUrl = isDevelopment ? 'http://localhost:8000' : '';
+
+      // Get auth token from localStorage
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add Authorization header if token exists
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${baseUrl}/api/settings`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(settings),
       });
 

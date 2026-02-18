@@ -404,8 +404,8 @@ async def get_tickers(screener: str = 'most_actives'):
 
 
 @router.get("/api/insights/analyze/{ticker}")
-async def analyze_ticker_insight(ticker: str):
-    """Analyze single ticker with caching"""
+async def analyze_ticker_insight(ticker: str, authorization: Optional[str] = Header(None)):
+    """Analyze single ticker with caching (works with or without authentication)"""
     # Fetch data (uses cache automatically)
     df = await trading_service.md.get_stock_data(ticker)
     if df is None or df.empty:
@@ -432,7 +432,21 @@ async def analyze_ticker_insight(ticker: str):
     social_sentiment = await trading_service.md.get_social_sentiment(ticker)
 
     # Get user preferences for option types and trading style
-    user_settings = await db.get_settings()
+    # Try to get authenticated user, but don't require it
+    current_user = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        if token == "limited_mode":
+            current_user = "limited_mode"
+        else:
+            session = await auth_manager.get_session(token)
+            if session:
+                current_user = session['username']
+
+    user_settings = None
+    if current_user:
+        user_settings = await db.get_settings(current_user)
+
     allowed_option_types = []
     trading_style = 'swing'  # default
 
