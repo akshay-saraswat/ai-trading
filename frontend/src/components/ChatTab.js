@@ -286,13 +286,28 @@ function ChatTab({ robinhoodAuthenticated = false }) {
                   <div className="total-cost-display">
                     Total Cost: ${(data.option_recommendation.limit_price * contractCount * 100).toFixed(2)}
                   </div>
-                  <button
-                    className="place-trade-button"
-                    onClick={() => handlePlaceOptionTrade(data.option_recommendation)}
-                    disabled={isPlacingTrade || contractCount < 1 || contractCount > data.option_recommendation.max_contracts}
-                  >
-                    {isPlacingTrade ? '⏳ Placing Order...' : '✅ Place Option Trade'}
-                  </button>
+                  {robinhoodAuthenticated ? (
+                    <button
+                      className="place-trade-button"
+                      onClick={() => handlePlaceOptionTrade(data.option_recommendation)}
+                      disabled={isPlacingTrade || contractCount < 1 || contractCount > data.option_recommendation.max_contracts}
+                    >
+                      {isPlacingTrade ? '⏳ Placing Order...' : '✅ Place Option Trade'}
+                    </button>
+                  ) : (
+                    <div style={{
+                      padding: '12px',
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '8px',
+                      color: 'var(--text-secondary)',
+                      fontSize: '14px',
+                      textAlign: 'center',
+                      marginTop: '12px'
+                    }}>
+                      Login to Robinhood to trade
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="budget-warning">
