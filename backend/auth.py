@@ -353,15 +353,9 @@ class AuthManager:
 
     async def is_authenticated(self, token: str) -> bool:
         """Check if token is valid and not expired"""
-        session = await self.get_session(token)
-        return session is not None
-
-    def is_authenticated(self, token: Optional[str]) -> bool:
-        """Check if session token is valid"""
         if not token:
             return False
-
-        session = self.get_session(token)
+        session = await self.get_session(token)
         return session is not None and session.get('logged_in', False)
 
     async def restore_session(self, token: str) -> bool:
