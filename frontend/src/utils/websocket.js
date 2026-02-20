@@ -156,10 +156,6 @@ class WebSocketManager {
       this.ws = null;
     }
   }
-
-  getConnectionState() {
-    return this.isConnected;
-  }
 }
 
 // Create a singleton instance

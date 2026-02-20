@@ -96,43 +96,6 @@ class CacheManager:
         self.memory_cache[key] = value
         self.memory_cache_ttl[key] = datetime.now().timestamp() + ttl
 
-    async def delete(self, key: str):
-        """Delete key from cache"""
-        if self.redis_client:
-            try:
-                await self.redis_client.delete(key)
-            except Exception as e:
-                logger.error(f"Redis DELETE error: {e}")
-
-        if key in self.memory_cache:
-            del self.memory_cache[key]
-            if key in self.memory_cache_ttl:
-                del self.memory_cache_ttl[key]
-
-    async def clear_pattern(self, pattern: str):
-        """Clear all keys matching pattern"""
-        if self.redis_client:
-            try:
-                async for key in self.redis_client.scan_iter(match=pattern):
-                    await self.redis_client.delete(key)
-            except Exception as e:
-                logger.error(f"Redis CLEAR_PATTERN error: {e}")
-
-        # Clear from memory cache
-        keys_to_delete = [k for k in self.memory_cache.keys() if pattern.replace('*', '') in k]
-        for key in keys_to_delete:
-            del self.memory_cache[key]
-            if key in self.memory_cache_ttl:
-                del self.memory_cache_ttl[key]
-
-    def cleanup_expired(self):
-        """Clean up expired entries from memory cache"""
-        now = datetime.now().timestamp()
-        expired_keys = [k for k, ttl in self.memory_cache_ttl.items() if now >= ttl]
-        for key in expired_keys:
-            del self.memory_cache[key]
-            del self.memory_cache_ttl[key]
-
 
 # Global cache instance
 cache = CacheManager()

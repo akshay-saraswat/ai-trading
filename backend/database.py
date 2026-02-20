@@ -160,6 +160,18 @@ class Database:
             return dict(row)
         return None
 
+    async def get_position_any_user(self, position_id: str) -> Optional[Dict]:
+        """Get position by ID without user filtering (for internal background services)"""
+        cursor = await self.conn.execute(
+            'SELECT * FROM positions WHERE id = ?',
+            (position_id,)
+        )
+        row = await cursor.fetchone()
+
+        if row:
+            return dict(row)
+        return None
+
     async def get_open_positions(self, user_id: str) -> List[Dict]:
         """Get all open positions for specific user"""
         cursor = await self.conn.execute(
@@ -247,34 +259,6 @@ class Database:
         return [dict(row) for row in rows]
 
     # ========== Settings Management ==========
-
-    async def get_setting(self, user_id: str, key: str) -> Optional[str]:
-        """Get setting value for specific user"""
-        cursor = await self.conn.execute(
-            'SELECT value FROM settings WHERE user_id = ? AND key = ?',
-            (user_id, key)
-        )
-        row = await cursor.fetchone()
-        return row['value'] if row else None
-
-    async def set_setting(self, user_id: str, key: str, value: str):
-        """Set setting value for specific user"""
-        await self.conn.execute('''
-            INSERT OR REPLACE INTO settings (user_id, key, value, updated_at)
-            VALUES (?, ?, ?, ?)
-        ''', (user_id, key, value, datetime.now().isoformat()))
-        await self.conn.commit()
-
-    async def get_all_settings(self, user_id: str) -> Dict:
-        """Get all settings as dict for specific user"""
-        cursor = await self.conn.execute(
-            'SELECT key, value FROM settings WHERE user_id = ?',
-            (user_id,)
-        )
-        rows = await cursor.fetchall()
-        return {row['key']: row['value'] for row in rows}
-
-    # ========== Analytics ==========
 
     async def get_performance_stats(self, user_id: str) -> Dict:
         """Calculate performance statistics for specific user"""

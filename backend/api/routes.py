@@ -527,7 +527,7 @@ async def analyze_ticker_insight(ticker: str, authorization: Optional[str] = Hea
 
 
 @router.post("/api/trade/place-option")
-async def place_option_trade(request: dict):
+async def place_option_trade(request: dict, current_user: str = Depends(get_current_user)):
     """
     Place an option trade with specified number of contracts.
     Request body: {
@@ -615,7 +615,7 @@ async def place_option_trade(request: dict):
                 "stop_loss": stop_loss,
                 "source": "bot",
                 "strategy_used": strategy_used
-            })
+            }, current_user)
 
             return {
                 "success": True,

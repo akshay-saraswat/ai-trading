@@ -202,19 +202,21 @@ class TradingService:
 
                     positions_checked += 1
 
-                    # Get TP/SL settings from DB
-                    db_pos = await db.get_position(option_id)
+                    # Get TP/SL settings from DB (use any_user version for background monitoring)
+                    db_pos = await db.get_position_any_user(option_id)
                     if not db_pos:
                         # Load from memory or use defaults
                         settings_dict = self.position_settings.get(option_id, {
                             'take_profit': settings.DEFAULT_TAKE_PROFIT,
                             'stop_loss': settings.DEFAULT_STOP_LOSS
                         })
+                        user_id = None  # Unknown user for positions not in DB
                     else:
                         settings_dict = {
                             'take_profit': db_pos['take_profit'],
                             'stop_loss': db_pos['stop_loss']
                         }
+                        user_id = db_pos.get('user_id')
 
                     take_profit = settings_dict.get('take_profit')
                     stop_loss = settings_dict.get('stop_loss')
@@ -228,13 +230,13 @@ class TradingService:
                     # Take Profit hit
                     if take_profit and pnl_percent >= take_profit:
                         logger.info(f"🎯 TP hit: {pos['ticker']} at {pnl_percent*100:.2f}%")
-                        await self._sell_position(pos, "Take Profit")
+                        await self._sell_position(pos, "Take Profit", user_id)
                         continue
 
                     # Stop Loss hit
                     if stop_loss and pnl_percent <= -stop_loss:
                         logger.info(f"🛑 SL hit: {pos['ticker']} at {pnl_percent*100:.2f}%")
-                        await self._sell_position(pos, "Stop Loss")
+                        await self._sell_position(pos, "Stop Loss", user_id)
                         continue
 
                 # Log monitoring cycle completion
@@ -251,7 +253,7 @@ class TradingService:
                 logger.error(f"Monitoring error: {e}")
                 await asyncio.sleep(60)  # Wait longer on error
 
-    async def _sell_position(self, position: Dict, reason: str):
+    async def _sell_position(self, position: Dict, reason: str, user_id: str = None):
         """
         Async wrapper to sell a position without blocking the event loop.
 
@@ -276,12 +278,16 @@ class TradingService:
                 trade_details
             )
 
-            # Update database
-            await db.close_position(
-                position_id=option_id,
-                exit_price=position.get('current_price', 0),
-                reason=reason
-            )
+            # Update database (only if we have user_id from DB position)
+            if user_id:
+                await db.close_position(
+                    position_id=option_id,
+                    user_id=user_id,
+                    exit_price=position.get('current_price', 0),
+                    reason=reason
+                )
+            else:
+                logger.warning(f"Position {option_id} sold but not tracked in database (no user_id found)")
 
             # Remove from memory settings
             if option_id in self.position_settings:
