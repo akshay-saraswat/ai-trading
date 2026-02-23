@@ -126,9 +126,19 @@ function ChatTab({ robinhoodAuthenticated = false }) {
       const isDevelopment = window.location.port === '3000';
       const baseUrl = isDevelopment ? 'http://localhost:8000' : '';
 
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add Authorization header if token exists
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${baseUrl}/api/trade/place-option`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({
           option_id: option.option_id,
           ticker: option.ticker,
