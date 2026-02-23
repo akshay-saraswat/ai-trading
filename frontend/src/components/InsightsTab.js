@@ -154,8 +154,22 @@ function InsightsTab({ robinhoodAuthenticated = false }) {
       const isDevelopment = window.location.port === '3000';
       const baseUrl = isDevelopment ? 'http://localhost:8000' : '';
 
+      // Get auth token for personalized results
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add Authorization header if token exists
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       // Step 1: Get list of tickers with selected screener type
-      const tickersResponse = await fetch(`${baseUrl}/api/insights/tickers?screener=${screenerType}`, { signal });
+      const tickersResponse = await fetch(`${baseUrl}/api/insights/tickers?screener=${screenerType}`, {
+        headers,
+        signal
+      });
       const tickersData = await tickersResponse.json();
 
       if (!tickersData.success || !tickersData.tickers) {
@@ -176,7 +190,10 @@ function InsightsTab({ robinhoodAuthenticated = false }) {
         const ticker = tickers[i];
 
         try {
-          const analyzeResponse = await fetch(`${baseUrl}/api/insights/analyze/${ticker}`, { signal });
+          const analyzeResponse = await fetch(`${baseUrl}/api/insights/analyze/${ticker}`, {
+            headers,
+            signal
+          });
           const analyzeData = await analyzeResponse.json();
 
           if (analyzeData.success && analyzeData.insight) {
@@ -268,12 +285,20 @@ function InsightsTab({ robinhoodAuthenticated = false }) {
         const isDevelopment = window.location.port === '3000';
         const baseUrl = isDevelopment ? 'http://localhost:8000' : '';
 
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Content-Type': 'application/json',
+        };
+
+        // Add Authorization header if token exists
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
         // Place the trade via backend API
         const response = await fetch(`${baseUrl}/api/trade/place-option`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: headers,
           body: JSON.stringify({
             option_id: tradingStock.option.option_id,
             ticker: tradingStock.ticker,

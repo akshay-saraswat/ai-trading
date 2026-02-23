@@ -96,6 +96,51 @@ class MarketSchedule:
         # If we get here, return first item in schedule
         return schedule.iloc[0]['market_open'].tz_convert(self.tz)
 
+    def get_time_until_market_open(self) -> str:
+        """
+        Get a human-readable string representing time until next market open.
+
+        Returns:
+            String describing time until market opens (e.g., "2 hours, 30 minutes")
+        """
+        now = datetime.now(self.tz)
+        next_open = self.get_next_market_open()
+        time_delta = next_open - now
+
+        days = time_delta.days
+        hours, remainder = divmod(time_delta.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+
+        parts = []
+        if days > 0:
+            parts.append(f"{days} day{'s' if days != 1 else ''}")
+        if hours > 0:
+            parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+        if minutes > 0:
+            parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+
+        return ", ".join(parts) if parts else "less than a minute"
+
+    def is_trading_day(self, date=None) -> bool:
+        """
+        Check if a given date is a trading day.
+
+        Args:
+            date: Date to check (defaults to today)
+
+        Returns:
+            True if the date is a trading day, False otherwise
+        """
+        if date is None:
+            date = datetime.now(self.tz).date()
+
+        schedule = self.nyse.schedule(
+            start_date=date,
+            end_date=date
+        )
+
+        return not schedule.empty
+
 
 if __name__ == "__main__":
     # Test the market schedule
