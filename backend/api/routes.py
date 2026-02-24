@@ -480,6 +480,13 @@ async def analyze_ticker_insight(ticker: str, authorization: Optional[str] = Hea
     option_data = None
     if analysis['decision'] in ['BUY_CALL', 'BUY_PUT', 'SELL_CALL', 'SELL_PUT']:
         target_premium_pct = analysis.get('target_premium_pct', 0.95)
+
+        # Check if Robinhood session is active, try to ensure we have one
+        if not trading_service.trader.is_logged_in():
+            logger.warning(f"Robinhood session not active when analyzing {ticker}. Options data unavailable.")
+            # Note: Proper session restoration would require re-authentication
+            # which isn't implemented yet. User needs to log in via web interface.
+
         # Find best option (run in thread pool - calls Robinhood API)
         option = await asyncio.to_thread(
             trading_service.trader.find_best_option,

@@ -553,7 +553,7 @@ function InsightsTab({ robinhoodAuthenticated = false }) {
 
                 {!insight.option && insight.decision !== 'HOLD' && (
                   <div className="insight-no-option">
-                    <p>No suitable option available</p>
+                    <p>No suitable option available for this ticker</p>
                   </div>
                 )}
               </div>

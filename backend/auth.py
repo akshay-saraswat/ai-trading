@@ -81,7 +81,7 @@ class AuthManager:
             login_result = rh.login(
                 username=username,
                 password=password,
-                store_session=False  # Don't persist to disk
+                store_session=True  # Persist session to disk for reuse
             )
 
             # Check if login was successful
@@ -222,17 +222,9 @@ class AuthManager:
             should_attempt_login: If False, only check existing session without triggering new login
         """
         try:
-            # SECURITY: Always logout before checking to prevent reusing stale sessions
-            # This ensures we validate the NEW credentials, not old ones
-            try:
-                rh.logout()
-                logger.debug("Logged out any existing Robinhood session")
-            except:
-                pass
-
             # Only attempt login on first poll to avoid triggering multiple MFA challenges
             if not should_attempt_login:
-                logger.debug("Skipping login attempt (already initiated), checking if approved...")
+                logger.debug("Checking if MFA was approved (not logging out existing session)...")
                 # Check if we can get profile (MFA was approved in Robinhood app)
                 try:
                     profile = rh.profiles.load_account_profile()
@@ -246,12 +238,17 @@ class AuthManager:
                     pass
                 return {'pending': True}
 
-            # First poll - attempt login which will trigger MFA challenge
-            logger.info("First poll - attempting login to initiate MFA...")
+            # First poll - logout and attempt login which will trigger MFA challenge
+            logger.info("First poll - logging out any existing session and initiating login...")
+            try:
+                rh.logout()
+                logger.debug("Logged out any existing Robinhood session")
+            except:
+                pass
             login_result = rh.login(
                 username=username,
                 password=password,
-                store_session=False
+                store_session=True  # Persist session to disk for reuse
             )
 
             # Check if we successfully logged in

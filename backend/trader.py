@@ -159,45 +159,17 @@ class Trader:
         For selling options:
         - SELL_CALL: Covered call (requires owning 100 shares) or naked (high risk)
         - SELL_PUT: Cash-secured put (requires cash collateral) or naked (high risk)
+
+        Returns None if unable to fetch option data.
         """
-        if not self.is_logged_in():
-            logger.warning("⚠️  Not logged in - returning mock option for simulation")
-            logger.warning("To enable real trading, log in through the web interface")
-
-            # Calculate dynamic expiration date (2 weeks from today)
-            mock_expiration = (datetime.date.today() + datetime.timedelta(days=14)).isoformat()
-
-            mock_price = 5.00
-            limit_price_raw = mock_price * target_premium_pct
-            limit_price = self.round_option_price(limit_price_raw)
-            return {
-                "id": "mock_id",
-                "symbol": ticker,
-                "type": decision,
-                "strike": 150,
-                "strike_price": 150,  # Add both formats for consistency
-                "market_price": mock_price,
-                "limit_price": limit_price,
-                "expiration": mock_expiration,
-                "expiration_date": mock_expiration  # Add both formats for consistency
-            }
-
-        # Get current price
-        current_price = float(r.get_latest_price(ticker)[0])
-        logger.debug(f"Current price of {ticker}: ${current_price:.2f}")
-
-        # Determine option type (call or put) - works for both buying and selling
-        option_type = "call" if decision in ["BUY_CALL", "SELL_CALL"] else "put"
-        
-        # Get options expiring soon (e.g. next 1 week)
-        # This is a simplified logic. In a real app we'd iterate expirations.
-        # For this demo, let's just grab the first chain logic available or sim it.
-        # Searching through chains can be slow.
-        
-        # Strategy: Find slightly OTM options for higher delta/gamma potential or ATM.
-        # Let's target ATM (At The Money) for simplicity.
-        
         try:
+            # Get current price
+            current_price = float(r.get_latest_price(ticker)[0])
+            logger.debug(f"Current price of {ticker}: ${current_price:.2f}")
+
+            # Determine option type (call or put) - works for both buying and selling
+            option_type = "call" if decision in ["BUY_CALL", "SELL_CALL"] else "put"
+
             # Get expirations
             chains = r.get_chains(ticker)
             logger.debug(f"Chains data: {chains}")
@@ -238,12 +210,12 @@ class Trader:
             # Select the closest one (ATM)
             best_option = options[0]
             logger.debug(f"📊 Selected option: Strike ${best_option['strike_price']} (closest to ${current_price:.2f})")
-            
+
             # Get market data for this option to check liqudity/price
             market_data = r.get_option_market_data_by_id(best_option['id'])
             if isinstance(market_data, list):
                 market_data = market_data[0]
-                
+
             ask_price = float(market_data['adjusted_mark_price']) # or ask_price
 
             # Calculate limit price based on mean reversion strategy
@@ -385,45 +357,8 @@ class Trader:
         """
         Finds options for spread strategies (Bull Call Spread or Bear Put Spread).
         Returns dict with 'long_leg' and 'short_leg' option details.
+        Returns None if unable to fetch spread options.
         """
-        if not self.is_logged_in():
-            logger.warning("⚠️  Not logged in - returning mock spread for simulation")
-            long_price = 6.00
-            short_price = 3.00
-            net_debit = long_price - short_price
-            limit_price = self.round_option_price(net_debit * target_premium_pct)
-
-            if decision == "BULL_CALL_SPREAD":
-                long_strike = 145
-                short_strike = 155
-            else:  # BEAR_PUT_SPREAD
-                long_strike = 155
-                short_strike = 145
-
-            return {
-                "type": decision,
-                "long_leg": {
-                    "id": "mock_long_id",
-                    "symbol": ticker,
-                    "strike": long_strike,
-                    "strike_price": long_strike,
-                    "market_price": long_price,
-                    "expiration": "2026-01-17"
-                },
-                "short_leg": {
-                    "id": "mock_short_id",
-                    "symbol": ticker,
-                    "strike": short_strike,
-                    "strike_price": short_strike,
-                    "market_price": short_price,
-                    "expiration": "2026-01-17"
-                },
-                "net_debit": net_debit,
-                "limit_price": limit_price,
-                "max_profit": abs(short_strike - long_strike) - net_debit,
-                "max_loss": net_debit
-            }
-
         try:
             current_price = float(r.get_latest_price(ticker)[0])
             logger.debug(f"Current price of {ticker}: ${current_price:.2f}")
@@ -527,38 +462,8 @@ class Trader:
         """
         Finds ATM call and put for straddle strategy.
         Returns dict with 'call_leg' and 'put_leg' option details.
+        Returns None if unable to fetch straddle options.
         """
-        if not self.is_logged_in():
-            logger.warning("⚠️  Not logged in - returning mock straddle for simulation")
-            call_price = 5.50
-            put_price = 5.00
-            total_debit = call_price + put_price
-            limit_price = self.round_option_price(total_debit * target_premium_pct)
-
-            return {
-                "type": "STRADDLE",
-                "call_leg": {
-                    "id": "mock_call_id",
-                    "symbol": ticker,
-                    "strike": 150,
-                    "strike_price": 150,
-                    "market_price": call_price,
-                    "expiration": "2026-01-17"
-                },
-                "put_leg": {
-                    "id": "mock_put_id",
-                    "symbol": ticker,
-                    "strike": 150,
-                    "strike_price": 150,
-                    "market_price": put_price,
-                    "expiration": "2026-01-17"
-                },
-                "total_debit": total_debit,
-                "limit_price": limit_price,
-                "breakeven_up": 150 + total_debit,
-                "breakeven_down": 150 - total_debit
-            }
-
         try:
             current_price = float(r.get_latest_price(ticker)[0])
             logger.debug(f"Current price of {ticker}: ${current_price:.2f}")
